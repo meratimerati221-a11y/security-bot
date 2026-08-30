@@ -3,6 +3,10 @@ const TELEGRAM_API = (token) =>
 
 const WARN_LIMIT = 3;
 const MUTE_MINUTES = 10;
+const OWNER_IDS = [
+  5366147520,
+  8811175958
+];
 
 // ---------- Telegram API ----------
 
@@ -37,6 +41,9 @@ async function deleteMessage(token, chatId, messageId) {
 
 async function isAdmin(token, chatId, userId) {
   if (!userId) return false;
+  if (OWNER_IDS.includes(Number(userId))) {
+  return true;
+}
 
   const result = await telegram(token, "getChatMember", {
     chat_id: chatId,
