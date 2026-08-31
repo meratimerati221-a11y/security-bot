@@ -10989,6 +10989,11 @@ const BOT_COMMANDS = {
     "/settings",
     "/config",
     "/تنظیمات"
+  ],
+
+  security: [
+    "/security",
+    "/امنیت"
   ]
 
 };
@@ -11625,6 +11630,32 @@ async function handleSettingsCommand(
 
 
 /* =========================
+   GENERIC HELPERS
+========================= */
+
+function parseDuration(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return 300;
+  const match = text.match(/^(\d+(?:\.\d+)?)(s|m|h|d)?$/);
+  if (!match) return 300;
+  const amount = Number(match[1]);
+  const unit = match[2] || "s";
+  const multiplier = unit === "m" ? 60 : unit === "h" ? 3600 : unit === "d" ? 86400 : 1;
+  return Math.max(1, Math.min(86400, Math.round(amount * multiplier)));
+}
+
+async function getBotId(env) {
+  try {
+    const response = await telegram(env, "getMe", {});
+    return Number(response?.id || response?.result?.id || 0);
+  } catch (error) {
+    console.error("getBotId:", getSafeErrorMessage(error));
+    return 0;
+  }
+}
+
+
+/* =========================
    PRIVATE / START HANDLER
 ========================= */
 
@@ -11774,6 +11805,24 @@ async function routeBotCommand(
       `🆔 شناسه شما:\n<code>${userId}</code>`
     );
 
+    return true;
+  }
+
+
+  /* SECURITY */
+
+  if (
+    parsed.command ===
+    "security"
+  ) {
+    if (!(await requireAdmin(message, env))) {
+      await sendMessage(env, message.chat.id, "⛔ فقط مدیران دسترسی دارند.");
+      return true;
+    }
+    const settings = await getSettings(env, message.chat.id);
+    await sendMessage(env, message.chat.id, securityPanelText(settings), {
+      reply_markup: securityKeyboard(settings)
+    });
     return true;
   }
 
@@ -30451,6 +30500,22 @@ async function routeCallbackQuery(
 
 
     /*
+     * Full callback engine for panel/toggle/mod/warning callbacks.
+     */
+    if (typeof handleCallbackQuery === "function") {
+      const handled = await runBotHandler(
+        "Full Callback Engine",
+        async (cb, runtimeEnv) => {
+          await handleCallbackQuery(cb, runtimeEnv);
+          return true;
+        },
+        callback,
+        env
+      );
+      if (handled) return true;
+    }
+
+    /*
      * Unknown callback.
      */
 
@@ -30658,6 +30723,30 @@ async function routeMessage(
     }
 
 
+    /* Additional command families from earlier sections. */
+    if (
+      await runBotHandler(
+        "Group Command Engine",
+        handleGroupCommand,
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      await runBotHandler(
+        "Message Tools",
+        async (msg, runtimeEnv) => routeMessageTools(msg, runtimeEnv),
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
+
     /*
      * Anti-spam.
      *
@@ -30782,6 +30871,13 @@ async function routeMessage(
 /* =========================
    MY CHAT MEMBER ROUTER
 ========================= */
+
+async function handleMyChatMember(update, env) {
+  const chat = update?.chat;
+  if (!chat) return false;
+  console.log("Bot membership update:", chat.id, update?.new_chat_member?.status || "unknown");
+  return true;
+}
 
 async function routeMyChatMember(
   update,
