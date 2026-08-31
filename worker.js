@@ -73,104 +73,6 @@ function json(data, status = 200) {
 
 
 /* =========================
-   OPENAI AI ASSISTANT
-========================= */
-
-async function askOpenAI(env, userText, chatType = "private") {
-  if (!env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is missing");
-  }
-
-  const response = await fetch(
-    "https://api.openai.com/v1/responses",
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "authorization": `Bearer ${env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "gpt-5.6-luna",
-        instructions:
-          "تو دستیار هوش مصنوعی یک ربات مدیریت گروه تلگرام هستی. پاسخ‌ها را فارسی، کوتاه، دقیق و دوستانه بده. دستورات مدیریتی ربات را خودت اجرا نکن؛ آن‌ها توسط سیستم مدیریت ربات پردازش می‌شوند. اگر درخواست کاربر مبهم است، کوتاه سؤال روشن‌کننده بپرس.",
-        input: String(userText || "").slice(0, 12000),
-        max_output_tokens: 700
-      })
-    }
-  );
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(
-      `OpenAI API ${response.status}: ${JSON.stringify(data).slice(0, 500)}`
-    );
-  }
-
-  if (typeof data.output_text === "string" && data.output_text.trim()) {
-    return data.output_text.trim();
-  }
-
-  const chunks = [];
-  for (const item of data.output || []) {
-    for (const content of item.content || []) {
-      if (content.type === "output_text" && content.text) {
-        chunks.push(content.text);
-      }
-    }
-  }
-
-  return chunks.join("\n").trim();
-}
-
-async function handleAIMessage(message, env) {
-  const text = String(message?.text || message?.caption || "").trim();
-  if (!text) return false;
-
-  const chatType = message?.chat?.type || "private";
-  const isPrivate = chatType === "private";
-  const mentionsRobot = /(?:^|[\s،,!؟])(?:ربات|روبات)(?:$|[\s،,!؟])/i.test(text);
-  const repliedToBot = Boolean(
-    message?.reply_to_message?.from?.is_bot
-  );
-
-  // In groups, AI only answers when explicitly addressed, so it does not
-  // reply to every ordinary group message and interfere with moderation.
-  if (!isPrivate && !mentionsRobot && !repliedToBot) {
-    return false;
-  }
-
-  try {
-    await telegram("sendChatAction", env, {
-      chat_id: message.chat.id,
-      action: "typing"
-    });
-
-    const answer = await askOpenAI(
-      env,
-      text,
-      chatType
-    );
-
-    if (!answer) return false;
-
-    await telegram("sendMessage", env, {
-      chat_id: message.chat.id,
-      text: answer.slice(0, 4096),
-      reply_to_message_id: message.message_id
-    });
-
-    return true;
-  } catch (error) {
-    console.error(
-      "AI message:",
-      getSafeErrorMessage(error)
-    );
-    return false;
-  }
-}
-
-/* =========================
    TELEGRAM API
 ========================= */
 
@@ -4342,6 +4244,84 @@ async function callbackModerationAction(
    CALLBACK ROUTER
 ========================= */
 
+
+/* =========================
+   ADMIN LINK / TAG TOOLS
+========================= */
+function adminLinkKeyboard() {
+  return { inline_keyboard: [
+    [{ text: "🔗 دریافت لینک گپ", callback_data: "adminlink:group" }],
+    [{ text: "♻️ دریافت لینک یک‌بارمصرف", callback_data: "adminlink:single" }]
+  ]};
+}
+
+function adminTagKeyboard() {
+  return { inline_keyboard: [
+    [{ text: "👑 تگ کردن کاربران مقامدار", callback_data: "admintag:admins" }],
+    [{ text: "👥 تگ کردن ۱۰۰ کاربر", callback_data: "admintag:100" }],
+    [{ text: "👥 تگ کردن ۳۰۰ کاربر", callback_data: "admintag:300" }]
+  ]};
+}
+
+async function handleAdminLinkCommand(message, env) {
+  const parsed = parseBotCommand(message?.text);
+  if (!parsed || parsed.command !== "links") return false;
+  const chat = message?.chat;
+  if (!chat || !["group", "supergroup"].includes(chat.type)) { await sendMessage(env, chat?.id, "⚠️ این قابلیت فقط داخل گروه قابل استفاده است."); return true; }
+  if (!await isAdmin(env, chat.id, Number(message.from?.id || 0))) { await sendMessage(env, chat.id, "⛔ فقط مدیران ربات می‌توانند لینک دریافت کنند."); return true; }
+  await sendMessage(env, chat.id, "🔗 <b>کدام نوع لینک را می‌خواهید دریافت کنید؟</b>", { reply_markup: adminLinkKeyboard() });
+  return true;
+}
+
+async function handleAdminTagCommand(message, env) {
+  const parsed = parseBotCommand(message?.text);
+  if (!parsed || parsed.command !== "tag") return false;
+  const chat = message?.chat;
+  if (!chat || !["group", "supergroup"].includes(chat.type)) { await sendMessage(env, chat?.id, "⚠️ این قابلیت فقط داخل گروه قابل استفاده است."); return true; }
+  if (!await isAdmin(env, chat.id, Number(message.from?.id || 0))) { await sendMessage(env, chat.id, "⛔ فقط مدیران ربات می‌توانند از قابلیت تگ استفاده کنند."); return true; }
+  await sendMessage(env, chat.id, "🏷️ <b>تگ به چه حالت باشد؟</b>", { reply_markup: adminTagKeyboard() });
+  return true;
+}
+
+async function getTrackedGroupUsers(env, chatId, limit = 300) {
+  const kv = getKV(env), users = []; let cursor;
+  do {
+    const page = await kv.list({ prefix: `user:${chatId}:`, limit: 1000, ...(cursor ? {cursor} : {}) });
+    for (const key of page.keys || []) { const u = await kvGet(env, key.name, null); if (u && u.id && !u.isBot) users.push(u); }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  users.sort((a,b) => Number(b.lastSeen||0) - Number(a.lastSeen||0));
+  return users.slice(0, Math.min(300, Math.max(1, Number(limit)||300)));
+}
+
+function mentionHtml(user) {
+  const id = Number(user?.id || 0); if (!id) return "";
+  const name = escapeHTML([user?.firstName,user?.lastName].filter(Boolean).join(" ").trim() || (user?.username ? `@${user.username}` : String(id)));
+  return `<a href="tg://user?id=${id}">${name}</a>`;
+}
+
+async function sendMentionList(env, chatId, title, users) {
+  const mentions = users.map(mentionHtml).filter(Boolean);
+  if (!mentions.length) { await sendMessage(env, chatId, "⚠️ کاربری برای تگ کردن پیدا نشد."); return false; }
+  let current = `${title}\n\n`, chunks=[];
+  for (const m of mentions) { if ((current+m+" ").length > 3900) { chunks.push(current.trim()); current=m+" "; } else current += m+" "; }
+  if (current.trim()) chunks.push(current.trim());
+  for (const chunk of chunks) await sendMessage(env, chatId, chunk, {disable_web_page_preview:true});
+  return true;
+}
+
+async function handleAdminLinkCallback(callback, env, action) {
+  const chatId=callback?.message?.chat?.id; if (!chatId) return;
+  if (action === "group") { const link=await telegram("exportChatInviteLink",env,{chat_id:chatId}); await sendMessage(env,chatId,`🔗 <b>لینک گپ:</b>\n${escapeHTML(String(link||""))}`); }
+  else if (action === "single") { const r=await telegram("createChatInviteLink",env,{chat_id:chatId,member_limit:1,name:"لینک یک‌بارمصرف ربات"}); const link=typeof r==="string"?r:r?.invite_link; await sendMessage(env,chatId,`♻️ <b>لینک یک‌بارمصرف:</b>\n${escapeHTML(String(link||""))}`); }
+}
+
+async function handleAdminTagCallback(callback, env, action) {
+  const chatId=callback?.message?.chat?.id; if (!chatId) return;
+  if (action === "admins") { const r=await telegram("getChatAdministrators",env,{chat_id:chatId}); const users=(r||[]).map(x=>x?.user).filter(u=>u&&u.id&&!u.is_bot); await sendMentionList(env,chatId,"👑 <b>کاربران مقامدار:</b>",users); return; }
+  const count=action==="100"?100:300; const users=await getTrackedGroupUsers(env,chatId,count); await sendMentionList(env,chatId,`🏷️ <b>تگ ${count} کاربر:</b>`,users);
+}
+
 async function handleCallbackQuery(
   callback,
   env
@@ -4356,6 +4336,17 @@ async function handleCallbackQuery(
     String(
       callback.data || ""
     );
+
+  if (data.startsWith("adminlink:")) {
+    await answerCallback(env, callback.id);
+    await handleAdminLinkCallback(callback, env, data.split(":")[1]);
+    return;
+  }
+  if (data.startsWith("admintag:")) {
+    await answerCallback(env, callback.id);
+    await handleAdminTagCallback(callback, env, data.split(":")[1]);
+    return;
+  }
 
   /*
    * Every callback except
@@ -10398,30 +10389,33 @@ function userManagementText() {
 function userManagementKeyboard(targetId = "") {
   return {
     inline_keyboard: [
+
       [
-        inlineButton("📨 پیام: مجاز", `um:${targetId}:messages:on`),
-        inlineButton("🚫 پیام: ممنوع", `um:${targetId}:messages:off`)
+        inlineButton(
+          "⚠️ راهنمای اخطار",
+          "help:warn"
+        )
       ],
+
       [
-        inlineButton("🎞️ GIF: مجاز", `um:${targetId}:animation:on`),
-        inlineButton("🚫 GIF: ممنوع", `um:${targetId}:animation:off`)
+        inlineButton(
+          "🔇 راهنمای سکوت",
+          "help:mute"
+        ),
+
+        inlineButton(
+          "🚫 راهنمای مسدودسازی",
+          "help:ban"
+        )
       ],
+
       [
-        inlineButton("🎥 ویدیو: مجاز", `um:${targetId}:videos:on`),
-        inlineButton("🚫 ویدیو: ممنوع", `um:${targetId}:videos:off`)
-      ],
-      [
-        inlineButton("🖼️ عکس: مجاز", `um:${targetId}:photos:on`),
-        inlineButton("🚫 عکس: ممنوع", `um:${targetId}:photos:off`)
-      ],
-      [
-        inlineButton("📁 فایل: مجاز", `um:${targetId}:documents:on`),
-        inlineButton("🚫 فایل: ممنوع", `um:${targetId}:documents:off`)
-      ],
-      [
-        inlineButton("🎤 ویس: مجاز", `um:${targetId}:voices:on`),
-        inlineButton("🚫 ویس: ممنوع", `um:${targetId}:voices:off`)
+        inlineButton(
+          "🔙 پنل اصلی",
+          "admin:main"
+        )
       ]
+
     ]
   };
 }
@@ -11208,7 +11202,11 @@ const BOT_COMMANDS = {
     "/مدیریت_کاربران",
     "مدیریت کاربر",
     "مدیریت کاربران"
-  ]
+  ],
+
+  links: ["/links", "/link", "/لینک", "لینک"],
+
+  tag: ["/tag", "/تگ", "تگ"]
 
 };
 
@@ -11910,6 +11908,8 @@ async function handleStartCommand(
    USER MANAGEMENT
 ========================= */
 
+
+
 function normalizeUserTargetText(value) {
   return String(value || "")
     .replace(/\u200c/g, " ")
@@ -12166,6 +12166,12 @@ async function routeBotCommand(
       env
     );
   }
+
+
+  /* ADMIN LINK / TAG */
+
+  if (parsed.command === "links") return await handleAdminLinkCommand(message, env);
+  if (parsed.command === "tag") return await handleAdminTagCommand(message, env);
 
 
   /* ADMIN */
@@ -12457,7 +12463,13 @@ async function handleNaturalCommandText(
       "/مدیریت",
 
     "تنظیمات":
-      "/تنظیمات"
+      "/تنظیمات",
+
+    "لینک":
+      "/لینک",
+
+    "تگ":
+      "/تگ"
 
   };
 
@@ -31335,17 +31347,6 @@ async function routeMessage(
       return true;
     }
 
-    if (
-      await runBotHandler(
-        "AI Assistant",
-        handleAIMessage,
-        message,
-        env
-      )
-    ) {
-      return true;
-    }
-
     return false;
   }
 
@@ -31609,23 +31610,6 @@ async function routeMessage(
       ) {
         return true;
       }
-    }
-
-
-    /*
-     * AI assistant. Runs only after commands, moderation and management
-     * handlers so it cannot consume or replace those features.
-     */
-
-    if (
-      await runBotHandler(
-        "AI Assistant",
-        handleAIMessage,
-        message,
-        env
-      )
-    ) {
-      return true;
     }
 
 
