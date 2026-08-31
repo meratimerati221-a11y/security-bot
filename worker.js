@@ -11620,6 +11620,44 @@ async function handleSettingsCommand(
 
 
 /* =========================
+   PRIVATE / START HANDLER
+========================= */
+
+async function handleStartCommand(
+  message,
+  env
+) {
+  const parsed =
+    parseBotCommand(
+      message?.text
+    );
+
+  if (
+    !parsed ||
+    parsed.command !== "start"
+  ) {
+    return false;
+  }
+
+  await sendMessage(
+    env,
+    message.chat.id,
+    [
+      "🤖 <b>ربات مدیریت گروه</b>",
+      "",
+      "سلام 🌹",
+      "ربات با موفقیت فعال است.",
+      "",
+      "برای مشاهده راهنما /help را بفرستید.",
+      "برای مشاهده شناسه /id را بفرستید."
+    ].join("\n")
+  );
+
+  return true;
+}
+
+
+/* =========================
    COMMAND ROUTER
 ========================= */
 
@@ -11635,6 +11673,19 @@ async function routeBotCommand(
 
   if (!parsed) {
     return false;
+  }
+
+
+  /* START */
+
+  if (
+    parsed.command ===
+    "start"
+  ) {
+    return await handleStartCommand(
+      message,
+      env
+    );
   }
 
 
@@ -30471,12 +30522,29 @@ async function routeMessage(
     chatType ===
       "private"
   ) {
-    return await runBotHandler(
-      "Private Handler",
-      handlePrivate,
-      message,
-      env
-    );
+    if (
+      await runBotHandler(
+        "Private Command Router",
+        routeBotCommand,
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      await runBotHandler(
+        "Private Natural Commands",
+        handleNaturalCommandText,
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
 
@@ -30547,6 +30615,36 @@ async function routeMessage(
             },
             runtimeEnv
           ),
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
+
+    /*
+     * Unified command router.
+     *
+     * Commands must be handled before
+     * normal group-message processing.
+     */
+
+    if (
+      await runBotHandler(
+        "Command Router",
+        routeBotCommand,
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      await runBotHandler(
+        "Natural Command Router",
+        handleNaturalCommandText,
         message,
         env
       )
