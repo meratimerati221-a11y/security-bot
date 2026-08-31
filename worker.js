@@ -10907,6 +10907,11 @@ function normalizeCommandText(text) {
 
 const BOT_COMMANDS = {
 
+  start: [
+    "/start",
+    "start"
+  ],
+
   help: [
     "/help",
     "/راهنما",
