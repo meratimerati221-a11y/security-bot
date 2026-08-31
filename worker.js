@@ -161,7 +161,7 @@ async function editMessage(
 }
 
 
-async function deleteMessage(
+async function deleteMessage__legacy_1(
   env,
   chatId,
   messageId
@@ -479,7 +479,7 @@ async function clearWarnings(
    ADMIN CHECK
 ========================= */
 
-async function getChatMember(
+async function getChatMember__legacy_1(
   env,
   chatId,
   userId
@@ -608,7 +608,7 @@ async function requireReplyUser(
    COMMAND NORMALIZER
 ========================= */
 
-function normalizeCommand(
+function normalizeCommand__legacy_1(
   text
 ) {
   if (!text) {
@@ -791,7 +791,7 @@ const LINK_REGEX =
   /(?:https?:\/\/|www\.|t\.me\/|telegram\.me\/|bit\.ly\/|tinyurl\.com\/)/i;
 
 
-function containsLink(
+function containsLink__legacy_1(
   text
 ) {
   return Boolean(
@@ -807,7 +807,7 @@ function containsLink(
    MODERATION
 ========================= */
 
-async function muteUser(
+async function muteUser__legacy_1(
   env,
   chatId,
   userId,
@@ -863,7 +863,7 @@ async function muteUser(
 }
 
 
-async function unmuteUser(
+async function unmuteUser__legacy_1(
   env,
   chatId,
   userId
@@ -914,7 +914,7 @@ async function unmuteUser(
 }
 
 
-async function banUser(
+async function banUser__legacy_1(
   env,
   chatId,
   userId
@@ -930,7 +930,7 @@ async function banUser(
 }
 
 
-async function unbanUser(
+async function unbanUser__legacy_1(
   env,
   chatId,
   userId
@@ -955,7 +955,7 @@ async function unbanUser(
    MAIN PANEL TEXT
 ========================= */
 
-function mainPanelText() {
+function mainPanelText__legacy_1() {
   return [
     "🤖 <b>پنل مدیریت ربات</b>",
     "",
@@ -977,7 +977,7 @@ function mainPanelText() {
    MAIN KEYBOARD
 ========================= */
 
-function mainKeyboard() {
+function mainKeyboard__legacy_1() {
   return {
     inline_keyboard: [
       [
@@ -1025,7 +1025,7 @@ function mainKeyboard() {
    BACK BUTTON
 ========================= */
 
-function backKeyboard() {
+function backKeyboard__legacy_1() {
   return {
     inline_keyboard: [
       [
@@ -1043,7 +1043,7 @@ function backKeyboard() {
    SECURITY PANEL
 ========================= */
 
-function securityPanelText(
+function securityPanelText__legacy_1(
   settings
 ) {
   const on =
@@ -1078,7 +1078,7 @@ function securityPanelText(
    SECURITY KEYBOARD
 ========================= */
 
-function securityKeyboard(
+function securityKeyboard__legacy_1(
   settings
 ) {
   return {
@@ -1207,7 +1207,7 @@ function securityKeyboard(
    MODERATION PANEL
 ========================= */
 
-function moderationPanelText() {
+function moderationPanelText__legacy_1() {
   return [
     "👮 <b>مدیریت کاربران</b>",
     "",
@@ -1219,7 +1219,7 @@ function moderationPanelText() {
 }
 
 
-function moderationPanelKeyboard() {
+function moderationPanelKeyboard__legacy_1() {
   return {
     inline_keyboard: [
       [
@@ -1263,7 +1263,7 @@ function moderationPanelKeyboard() {
    WARNING PANEL
 ========================= */
 
-function warningsPanelText(
+function warningsPanelText__legacy_1(
   settings
 ) {
   return [
@@ -1283,7 +1283,7 @@ function warningsPanelText(
 }
 
 
-function warningsPanelKeyboard(
+function warningsPanelKeyboard__legacy_1(
   settings
 ) {
   return {
@@ -1331,7 +1331,7 @@ function warningsPanelKeyboard(
    RULES PANEL
 ========================= */
 
-function rulesPanelText(
+function rulesPanelText__legacy_1(
   settings
 ) {
   return [
@@ -1345,7 +1345,7 @@ function rulesPanelText(
 }
 
 
-function rulesPanelKeyboard() {
+function rulesPanelKeyboard__legacy_1() {
   return {
     inline_keyboard: [
       [
@@ -1371,7 +1371,7 @@ function rulesPanelKeyboard() {
    SETTINGS PANEL
 ========================= */
 
-function settingsPanelText(
+function settingsPanelText__legacy_1(
   settings
 ) {
   return [
@@ -1397,7 +1397,7 @@ function settingsPanelText(
 }
 
 
-function settingsPanelKeyboard(
+function settingsPanelKeyboard__legacy_1(
   settings
 ) {
   return {
@@ -1442,7 +1442,7 @@ function settingsPanelKeyboard(
    STATS PANEL
 ========================= */
 
-function statsPanelText(
+function statsPanelText__legacy_1(
   stats
 ) {
   return [
@@ -1485,7 +1485,7 @@ function statsKey(
 }
 
 
-async function getStats(
+async function getStats__legacy_1(
   env,
   chatId
 ) {
@@ -1516,7 +1516,7 @@ async function saveStats(
 }
 
 
-async function incrementStat(
+async function incrementStat__legacy_1(
   env,
   chatId,
   field,
@@ -1822,7 +1822,7 @@ async function applyWarningAction(
    FORMAT WARN RESULT
 ========================= */
 
-function warningResultText(
+function warningResultText__legacy_1(
   user,
   result,
   action
@@ -2464,7 +2464,7 @@ function floodKey(
 }
 
 
-async function getFloodData(
+async function getFloodData__legacy_1(
   env,
   chatId,
   userId
@@ -2483,7 +2483,7 @@ async function getFloodData(
 }
 
 
-async function saveFloodData(
+async function saveFloodData__legacy_1(
   env,
   chatId,
   userId,
@@ -2507,7 +2507,7 @@ async function saveFloodData(
    FLOOD CHECK
 ========================= */
 
-async function checkFlood(
+async function checkFlood__legacy_1(
   env,
   chatId,
   userId
@@ -2847,7 +2847,7 @@ async function processMediaLocks(
    ANTI SPAM
 ========================= */
 
-async function processAntiSpam(
+async function processAntiSpam__legacy_1(
   env,
   message,
   settings
@@ -5313,7 +5313,7 @@ function safeLogObject(
    EVENT LOG
 ========================= */
 
-async function logEvent(
+async function logEvent__legacy_1(
   env,
   chatId,
   type,
@@ -5430,7 +5430,7 @@ async function clearEventLogs(
    STATISTIC INCREMENT
 ========================= */
 
-async function incrementStat(
+async function incrementStat__legacy_2(
   env,
   chatId,
   stat,
@@ -5548,7 +5548,7 @@ async function resetStats(
    MEMBER STATISTICS
 ========================= */
 
-async function updateMemberStats(
+async function updateMemberStats__legacy_1(
   env,
   chatId,
   userId,
@@ -5766,7 +5766,7 @@ async function logDeletedMessage(
    WARNING EVENT
 ========================= */
 
-async function logWarningEvent(
+async function logWarningEvent__legacy_1(
   env,
   chatId,
   userId,
@@ -5795,7 +5795,7 @@ async function logWarningEvent(
    MUTE EVENT
 ========================= */
 
-async function logMuteEvent(
+async function logMuteEvent__legacy_1(
   env,
   chatId,
   userId
@@ -6137,7 +6137,7 @@ async function handleLogCallback(
    ADMIN CHECK
 ========================= */
 
-async function requireAdmin(
+async function requireAdmin__legacy_1(
   env,
   chatId,
   userId
@@ -6377,7 +6377,7 @@ async function kickUser(
    PROMOTE USER
 ========================= */
 
-async function promoteUser(
+async function promoteUser__legacy_1(
   env,
   chatId,
   userId
@@ -6425,7 +6425,7 @@ async function promoteUser(
    DEMOTE USER
 ========================= */
 
-async function demoteUser(
+async function demoteUser__legacy_1(
   env,
   chatId,
   userId
@@ -6563,7 +6563,7 @@ async function setGroupDescription(
    PIN MESSAGE
 ========================= */
 
-async function pinMessage(
+async function pinMessage__legacy_1(
   env,
   chatId,
   messageId,
@@ -6601,7 +6601,7 @@ async function pinMessage(
    UNPIN MESSAGE
 ========================= */
 
-async function unpinMessage(
+async function unpinMessage__legacy_1(
   env,
   chatId,
   messageId
@@ -6635,7 +6635,7 @@ async function unpinMessage(
    GET CHAT MEMBER
 ========================= */
 
-async function getChatMember(
+async function getChatMember__legacy_2(
   env,
   chatId,
   userId
@@ -7244,7 +7244,7 @@ async function saveFloodState(
    FLOOD CHECK
 ========================= */
 
-async function checkFlood(
+async function checkFlood__legacy_2(
   env,
   chatId,
   userId
@@ -7372,7 +7372,7 @@ const SPAM_PATTERNS = [
    LINK DETECTOR
 ========================= */
 
-function containsLink(
+function containsLink__legacy_2(
   text
 ) {
   if (!text) {
@@ -8306,7 +8306,7 @@ async function processGoodbyeMember(
    GET RULES
 ========================= */
 
-async function getGroupRules(
+async function getGroupRules__legacy_1(
   env,
   chatId
 ) {
@@ -8327,7 +8327,7 @@ async function getGroupRules(
    SAVE RULES
 ========================= */
 
-async function saveGroupRules(
+async function saveGroupRules__legacy_1(
   env,
   chatId,
   rules
@@ -8368,7 +8368,7 @@ async function saveGroupRules(
    RULES MESSAGE
 ========================= */
 
-async function sendRules(
+async function sendRules__legacy_1(
   env,
   chatId
 ) {
@@ -8399,7 +8399,7 @@ async function sendRules(
    RULES CALLBACK
 ========================= */
 
-async function handleRulesCallback(
+async function handleRulesCallback__legacy_1(
   callback,
   env
 ) {
@@ -8499,7 +8499,7 @@ async function toggleGoodbye(
    RULES COMMAND
 ========================= */
 
-async function handleRulesCommand(
+async function handleRulesCommand__legacy_1(
   message,
   env
 ) {
@@ -8522,7 +8522,7 @@ async function handleRulesCommand(
    WELCOME SETTINGS TEXT
 ========================= */
 
-function welcomeSettingsText(
+function welcomeSettingsText__legacy_1(
   settings
 ) {
   return [
@@ -8546,7 +8546,7 @@ function welcomeSettingsText(
    WELCOME SETTINGS KEYBOARD
 ========================= */
 
-function welcomeSettingsKeyboard(
+function welcomeSettingsKeyboard__legacy_1(
   settings
 ) {
   return {
@@ -8597,7 +8597,7 @@ function welcomeSettingsKeyboard(
    WELCOME CALLBACK
 ========================= */
 
-async function handleWelcomeCallback(
+async function handleWelcomeCallback__legacy_1(
   callback,
   env
 ) {
@@ -8770,7 +8770,7 @@ async function processGroupEvents(
    WARNING STORAGE
 ========================= */
 
-async function getUserWarnings(
+async function getUserWarnings__legacy_1(
   env,
   chatId,
   userId
@@ -8808,7 +8808,7 @@ async function getUserWarnings(
    SAVE WARNINGS
 ========================= */
 
-async function saveUserWarnings(
+async function saveUserWarnings__legacy_1(
   env,
   chatId,
   userId,
@@ -8826,7 +8826,7 @@ async function saveUserWarnings(
    ADD WARNING
 ========================= */
 
-async function addWarning(
+async function addWarning__legacy_1(
   env,
   chatId,
   userId,
@@ -8968,7 +8968,7 @@ async function removeWarning(
    RESET WARNINGS
 ========================= */
 
-async function resetWarnings(
+async function resetWarnings__legacy_1(
   env,
   chatId,
   userId
@@ -9206,7 +9206,7 @@ async function unrestrictUser(
    TEMPORARY MUTE
 ========================= */
 
-async function muteUser(
+async function muteUser__legacy_2(
   env,
   chatId,
   userId,
@@ -9906,7 +9906,7 @@ function adminPanelText() {
    SECURITY PANEL
 ========================= */
 
-async function showSecurityPanel(
+async function showSecurityPanel__legacy_1(
   env,
   chatId
 ) {
@@ -10347,7 +10347,7 @@ function statsKeyboard() {
    SETTINGS PANEL
 ========================= */
 
-async function showSettingsPanel(
+async function showSettingsPanel__legacy_1(
   env,
   chatId
 ) {
@@ -10441,7 +10441,7 @@ function settingsKeyboard() {
    ADMIN CALLBACK ROUTER
 ========================= */
 
-async function handleAdminPanelCallback(
+async function handleAdminPanelCallback__legacy_1(
   callback,
   env
 ) {
@@ -11172,7 +11172,7 @@ async function requireAdmin(
    MUTE COMMAND
 ========================= */
 
-async function handleMuteCommand(
+async function handleMuteCommand__legacy_1(
   message,
   env,
   parsed
@@ -11274,7 +11274,7 @@ async function handleMuteCommand(
    UNMUTE COMMAND
 ========================= */
 
-async function handleUnmuteCommand(
+async function handleUnmuteCommand__legacy_1(
   message,
   env,
   parsed
@@ -11341,7 +11341,7 @@ async function handleUnmuteCommand(
    BAN COMMAND
 ========================= */
 
-async function handleBanCommand(
+async function handleBanCommand__legacy_1(
   message,
   env,
   parsed
@@ -11447,7 +11447,7 @@ async function handleBanCommand(
    UNBAN COMMAND
 ========================= */
 
-async function handleUnbanCommand(
+async function handleUnbanCommand__legacy_1(
   message,
   env,
   parsed
@@ -11526,7 +11526,7 @@ async function handleUnbanCommand(
    STATS COMMAND
 ========================= */
 
-async function handleStatsCommand(
+async function handleStatsCommand__legacy_1(
   message,
   env,
   parsed
@@ -12348,7 +12348,7 @@ async function canModerate(
    GROUP RULES
 ========================= */
 
-async function getGroupRules(
+async function getGroupRules__legacy_2(
   env,
   chatId
 ) {
@@ -12365,7 +12365,7 @@ async function getGroupRules(
 }
 
 
-async function saveGroupRules(
+async function saveGroupRules__legacy_2(
   env,
   chatId,
   rules
@@ -12395,7 +12395,7 @@ async function saveGroupRules(
    RULES COMMAND
 ========================= */
 
-async function handleRulesCommand(
+async function handleRulesCommand__legacy_2(
   message,
   env
 ) {
@@ -12438,7 +12438,7 @@ async function handleRulesCommand(
    SET RULES
 ========================= */
 
-async function handleSetRulesCommand(
+async function handleSetRulesCommand__legacy_1(
   message,
   env
 ) {
@@ -12743,7 +12743,7 @@ function welcomeSettingsKeyboard(settings) {
    WELCOME MESSAGE
 ========================= */
 
-async function sendWelcomeMessage(
+async function sendWelcomeMessage__legacy_1(
   message,
   env
 ) {
@@ -12817,7 +12817,7 @@ async function sendWelcomeMessage(
    GOODBYE MESSAGE
 ========================= */
 
-async function sendGoodbyeMessage(
+async function sendGoodbyeMessage__legacy_1(
   message,
   env
 ) {
@@ -13088,7 +13088,7 @@ async function updateMemberStats(
    CHAT STATISTICS
 ========================= */
 
-async function getChatStats(
+async function getChatStats__legacy_1(
   env,
   chatId
 ) {
@@ -13111,7 +13111,7 @@ async function getChatStats(
    INCREMENT STAT
 ========================= */
 
-async function incrementStat(
+async function incrementStat__legacy_3(
   env,
   chatId,
   field
@@ -15142,7 +15142,7 @@ function buildSecurityPanelKeyboard(
    SHOW SECURITY PANEL
 ========================= */
 
-async function showSecurityPanel(
+async function showSecurityPanel__legacy_2(
   env,
   chatId
 ) {
@@ -16899,7 +16899,7 @@ async function saveGroupRules(
    RULES COMMAND
 ========================= */
 
-async function handleRulesCommand(
+async function handleRulesCommand__legacy_3(
   message,
   env
 ) {
@@ -16950,7 +16950,7 @@ async function handleRulesCommand(
    SET RULES COMMAND
 ========================= */
 
-async function handleSetRulesCommand(
+async function handleSetRulesCommand__legacy_2(
   message,
   env
 ) {
@@ -17944,7 +17944,7 @@ function getDefaultAntiSpamConfig() {
    GET ANTI-SPAM CONFIG
 ========================= */
 
-async function getAntiSpamConfig(
+async function getAntiSpamConfig__legacy_1(
   env,
   chatId
 ) {
@@ -17966,7 +17966,7 @@ async function getAntiSpamConfig(
    SAVE ANTI-SPAM CONFIG
 ========================= */
 
-async function saveAntiSpamConfig(
+async function saveAntiSpamConfig__legacy_1(
   env,
   chatId,
   config
@@ -18245,7 +18245,7 @@ function isDuplicateSpam(
    NORMALIZE SPAM TEXT
 ========================= */
 
-function normalizeSpamText(
+function normalizeSpamText__legacy_1(
   text
 ) {
   return String(
@@ -18627,7 +18627,7 @@ async function processAntiSpam(
    ANTI-SPAM COMMAND
 ========================= */
 
-async function handleAntiSpamCommand(
+async function handleAntiSpamCommand__legacy_1(
   message,
   env
 ) {
@@ -18809,7 +18809,7 @@ function getDefaultLinkConfig() {
    GET LINK CONFIG
 ========================= */
 
-async function getLinkConfig(
+async function getLinkConfig__legacy_1(
   env,
   chatId
 ) {
@@ -18831,7 +18831,7 @@ async function getLinkConfig(
    SAVE LINK CONFIG
 ========================= */
 
-async function saveLinkConfig(
+async function saveLinkConfig__legacy_1(
   env,
   chatId,
   config
@@ -18897,7 +18897,7 @@ function extractURLs(
    DOMAIN EXTRACTION
 ========================= */
 
-function extractDomain(
+function extractDomain__legacy_1(
   url
 ) {
   try {
@@ -20403,7 +20403,7 @@ async function routeReportSystem(
    ADMIN PANEL KEYBOARD
 ========================= */
 
-function buildAdminPanelKeyboard() {
+function buildAdminPanelKeyboard__legacy_1() {
   return {
     inline_keyboard: [
       [
@@ -20595,7 +20595,7 @@ async function sendAdminPanel(
    PANEL COMMAND
 ========================= */
 
-async function handleAdminPanelCommand(
+async function handleAdminPanelCommand__legacy_1(
   message,
   env
 ) {
@@ -20965,7 +20965,7 @@ async function showReportPanel(
    MAIN PANEL CALLBACK
 ========================= */
 
-async function handleAdminPanelCallback(
+async function handleAdminPanelCallback__legacy_2(
   callback,
   env
 ) {
@@ -23655,7 +23655,7 @@ async function routePollSystem(
    DEFAULT RULES
 ========================= */
 
-function getDefaultRulesConfig() {
+function getDefaultRulesConfig__legacy_1() {
   return {
     enabled: true,
 
@@ -23682,7 +23682,7 @@ function getDefaultRulesConfig() {
    GET RULES
 ========================= */
 
-async function getRulesConfig(
+async function getRulesConfig__legacy_1(
   env,
   chatId
 ) {
@@ -23704,7 +23704,7 @@ async function getRulesConfig(
    SAVE RULES
 ========================= */
 
-async function saveRulesConfig(
+async function saveRulesConfig__legacy_1(
   env,
   chatId,
   config
@@ -23829,7 +23829,7 @@ function buildRulesText(
    RULES KEYBOARD
 ========================= */
 
-function buildRulesKeyboard(
+function buildRulesKeyboard__legacy_1(
   isAdmin = false
 ) {
   const rows = [
@@ -23946,7 +23946,7 @@ async function sendRules(
    RULES COMMAND
 ========================= */
 
-async function handleRulesCommand(
+async function handleRulesCommand__legacy_4(
   message,
   env
 ) {
@@ -24271,7 +24271,7 @@ async function handleRulesCommand(
    RULES CALLBACK
 ========================= */
 
-async function handleRulesCallback(
+async function handleRulesCallback__legacy_2(
   callback,
   env
 ) {
@@ -24594,7 +24594,7 @@ async function handleRulesCallback(
    RULES ROUTER
 ========================= */
 
-async function routeRulesSystem(
+async function routeRulesSystem__legacy_1(
   update,
   env
 ) {
