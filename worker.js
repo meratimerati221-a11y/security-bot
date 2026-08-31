@@ -185,7 +185,8 @@ async function handleBotWakeWord(
   await sendMessage(
     env,
     message.chat.id,
-    reply
+    reply,
+    message?.message_id ? { reply_to_message_id: message.message_id } : {}
   );
 
   return true;
@@ -4244,84 +4245,6 @@ async function callbackModerationAction(
    CALLBACK ROUTER
 ========================= */
 
-
-/* =========================
-   ADMIN LINK / TAG TOOLS
-========================= */
-function adminLinkKeyboard() {
-  return { inline_keyboard: [
-    [{ text: "🔗 دریافت لینک گپ", callback_data: "adminlink:group" }],
-    [{ text: "♻️ دریافت لینک یک‌بارمصرف", callback_data: "adminlink:single" }]
-  ]};
-}
-
-function adminTagKeyboard() {
-  return { inline_keyboard: [
-    [{ text: "👑 تگ کردن کاربران مقامدار", callback_data: "admintag:admins" }],
-    [{ text: "👥 تگ کردن ۱۰۰ کاربر", callback_data: "admintag:100" }],
-    [{ text: "👥 تگ کردن ۳۰۰ کاربر", callback_data: "admintag:300" }]
-  ]};
-}
-
-async function handleAdminLinkCommand(message, env) {
-  const parsed = parseBotCommand(message?.text);
-  if (!parsed || parsed.command !== "links") return false;
-  const chat = message?.chat;
-  if (!chat || !["group", "supergroup"].includes(chat.type)) { await sendMessage(env, chat?.id, "⚠️ این قابلیت فقط داخل گروه قابل استفاده است."); return true; }
-  if (!await isAdmin(env, chat.id, Number(message.from?.id || 0))) { await sendMessage(env, chat.id, "⛔ فقط مدیران ربات می‌توانند لینک دریافت کنند."); return true; }
-  await sendMessage(env, chat.id, "🔗 <b>کدام نوع لینک را می‌خواهید دریافت کنید؟</b>", { reply_markup: adminLinkKeyboard() });
-  return true;
-}
-
-async function handleAdminTagCommand(message, env) {
-  const parsed = parseBotCommand(message?.text);
-  if (!parsed || parsed.command !== "tag") return false;
-  const chat = message?.chat;
-  if (!chat || !["group", "supergroup"].includes(chat.type)) { await sendMessage(env, chat?.id, "⚠️ این قابلیت فقط داخل گروه قابل استفاده است."); return true; }
-  if (!await isAdmin(env, chat.id, Number(message.from?.id || 0))) { await sendMessage(env, chat.id, "⛔ فقط مدیران ربات می‌توانند از قابلیت تگ استفاده کنند."); return true; }
-  await sendMessage(env, chat.id, "🏷️ <b>تگ به چه حالت باشد؟</b>", { reply_markup: adminTagKeyboard() });
-  return true;
-}
-
-async function getTrackedGroupUsers(env, chatId, limit = 300) {
-  const kv = getKV(env), users = []; let cursor;
-  do {
-    const page = await kv.list({ prefix: `user:${chatId}:`, limit: 1000, ...(cursor ? {cursor} : {}) });
-    for (const key of page.keys || []) { const u = await kvGet(env, key.name, null); if (u && u.id && !u.isBot) users.push(u); }
-    cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
-  users.sort((a,b) => Number(b.lastSeen||0) - Number(a.lastSeen||0));
-  return users.slice(0, Math.min(300, Math.max(1, Number(limit)||300)));
-}
-
-function mentionHtml(user) {
-  const id = Number(user?.id || 0); if (!id) return "";
-  const name = escapeHTML([user?.firstName,user?.lastName].filter(Boolean).join(" ").trim() || (user?.username ? `@${user.username}` : String(id)));
-  return `<a href="tg://user?id=${id}">${name}</a>`;
-}
-
-async function sendMentionList(env, chatId, title, users) {
-  const mentions = users.map(mentionHtml).filter(Boolean);
-  if (!mentions.length) { await sendMessage(env, chatId, "⚠️ کاربری برای تگ کردن پیدا نشد."); return false; }
-  let current = `${title}\n\n`, chunks=[];
-  for (const m of mentions) { if ((current+m+" ").length > 3900) { chunks.push(current.trim()); current=m+" "; } else current += m+" "; }
-  if (current.trim()) chunks.push(current.trim());
-  for (const chunk of chunks) await sendMessage(env, chatId, chunk, {disable_web_page_preview:true});
-  return true;
-}
-
-async function handleAdminLinkCallback(callback, env, action) {
-  const chatId=callback?.message?.chat?.id; if (!chatId) return;
-  if (action === "group") { const link=await telegram("exportChatInviteLink",env,{chat_id:chatId}); await sendMessage(env,chatId,`🔗 <b>لینک گپ:</b>\n${escapeHTML(String(link||""))}`); }
-  else if (action === "single") { const r=await telegram("createChatInviteLink",env,{chat_id:chatId,member_limit:1,name:"لینک یک‌بارمصرف ربات"}); const link=typeof r==="string"?r:r?.invite_link; await sendMessage(env,chatId,`♻️ <b>لینک یک‌بارمصرف:</b>\n${escapeHTML(String(link||""))}`); }
-}
-
-async function handleAdminTagCallback(callback, env, action) {
-  const chatId=callback?.message?.chat?.id; if (!chatId) return;
-  if (action === "admins") { const r=await telegram("getChatAdministrators",env,{chat_id:chatId}); const users=(r||[]).map(x=>x?.user).filter(u=>u&&u.id&&!u.is_bot); await sendMentionList(env,chatId,"👑 <b>کاربران مقامدار:</b>",users); return; }
-  const count=action==="100"?100:300; const users=await getTrackedGroupUsers(env,chatId,count); await sendMentionList(env,chatId,`🏷️ <b>تگ ${count} کاربر:</b>`,users);
-}
-
 async function handleCallbackQuery(
   callback,
   env
@@ -4336,17 +4259,6 @@ async function handleCallbackQuery(
     String(
       callback.data || ""
     );
-
-  if (data.startsWith("adminlink:")) {
-    await answerCallback(env, callback.id);
-    await handleAdminLinkCallback(callback, env, data.split(":")[1]);
-    return;
-  }
-  if (data.startsWith("admintag:")) {
-    await answerCallback(env, callback.id);
-    await handleAdminTagCallback(callback, env, data.split(":")[1]);
-    return;
-  }
 
   /*
    * Every callback except
@@ -11180,7 +11092,9 @@ const BOT_COMMANDS = {
     "/آمار",
     "آمار",
     "آمار گپ",
-    "/آمار گپ"
+    "/آمار گپ",
+    "آمارم",
+    "/آمارم"
   ],
 
   settings: [
@@ -11202,11 +11116,7 @@ const BOT_COMMANDS = {
     "/مدیریت_کاربران",
     "مدیریت کاربر",
     "مدیریت کاربران"
-  ],
-
-  links: ["/links", "/link", "/لینک", "لینک"],
-
-  tag: ["/tag", "/تگ", "تگ"]
+  ]
 
 };
 
@@ -12168,12 +12078,6 @@ async function routeBotCommand(
   }
 
 
-  /* ADMIN LINK / TAG */
-
-  if (parsed.command === "links") return await handleAdminLinkCommand(message, env);
-  if (parsed.command === "tag") return await handleAdminTagCommand(message, env);
-
-
   /* ADMIN */
 
   if (
@@ -12463,13 +12367,7 @@ async function handleNaturalCommandText(
       "/مدیریت",
 
     "تنظیمات":
-      "/تنظیمات",
-
-    "لینک":
-      "/لینک",
-
-    "تگ":
-      "/تگ"
+      "/تنظیمات"
 
   };
 
@@ -13529,11 +13427,13 @@ async function registerUser(
     data
   );
 
-  await incrementStat(
-    env,
-    chatId,
-    "users"
-  );
+  if (!old) {
+    await incrementStat(
+      env,
+      chatId,
+      "users"
+    );
+  }
 
   return true;
 }
@@ -13546,7 +13446,8 @@ async function registerUser(
 async function updateUserActivity(
   env,
   chatId,
-  user
+  user,
+  message = null
 ) {
   if (
     !chatId ||
@@ -13578,6 +13479,29 @@ async function updateUserActivity(
     Number(
       data.messages || 0
     ) + 1;
+
+  const typeCounters = [
+    ["voice", hasVoice(message), "voiceMessages"],
+    ["audio", hasAudio(message), "audioMessages"],
+    ["photo", hasPhoto(message), "photoMessages"],
+    ["video", hasVideo(message), "videoMessages"],
+    ["document", hasDocument(message), "documentMessages"],
+    ["animation", hasAnimation(message), "animationMessages"],
+    ["forward", isForwarded(message), "forwardedMessages"],
+    ["poll", hasPoll(message), "pollMessages"],
+    ["location", hasLocation(message), "locationMessages"],
+    ["contact", hasContact(message), "contactMessages"]
+  ];
+
+  for (const [, present, field] of typeCounters) {
+    if (present) {
+      data[field] = Number(data[field] || 0) + 1;
+    }
+  }
+
+  if (message?.new_chat_members?.length) {
+    data.joins = Number(data.joins || 0) + message.new_chat_members.length;
+  }
 
   data.lastSeen =
     Date.now();
@@ -30146,6 +30070,17 @@ function getDefaultChatStats() {
 
     deletedMessages: 0,
 
+    voiceMessages: 0,
+    audioMessages: 0,
+    photoMessages: 0,
+    videoMessages: 0,
+    documentMessages: 0,
+    animationMessages: 0,
+    forwardedMessages: 0,
+    pollMessages: 0,
+    locationMessages: 0,
+    contactMessages: 0,
+
     commands: 0,
 
     startedAt: Date.now(),
@@ -30389,6 +30324,18 @@ function buildChatStatsText(
     `🚫 تخلف اسپم: <b>${Number(
       stats.spamViolations || 0
     )}</b>`,
+    "",
+    "🎞️ <b>نوع پیام‌ها</b>",
+    `🎤 ویس: <b>${Number(stats.voiceMessages || 0)}</b>`,
+    `🎵 آهنگ: <b>${Number(stats.audioMessages || 0)}</b>`,
+    `🖼️ عکس: <b>${Number(stats.photoMessages || 0)}</b>`,
+    `🎬 ویدیو: <b>${Number(stats.videoMessages || 0)}</b>`,
+    `📁 فایل: <b>${Number(stats.documentMessages || 0)}</b>`,
+    `🎞️ GIF: <b>${Number(stats.animationMessages || 0)}</b>`,
+    `↪️ فوروارد: <b>${Number(stats.forwardedMessages || 0)}</b>`,
+    `📊 نظرسنجی: <b>${Number(stats.pollMessages || 0)}</b>`,
+    `📍 موقعیت: <b>${Number(stats.locationMessages || 0)}</b>`,
+    `👤 مخاطب: <b>${Number(stats.contactMessages || 0)}</b>`,
     `⚠️ اخطارها: <b>${Number(
       stats.warnings || 0
     )}</b>`,
@@ -30785,6 +30732,56 @@ async function showGroupMemberStats(
 
 
 /* =========================
+   MY STATS COMMAND
+========================= */
+
+async function showMyStats(message, env) {
+  const chatId = Number(message?.chat?.id || 0);
+  const user = message?.from;
+  const userId = Number(user?.id || 0);
+  if (!chatId || !userId || message?.chat?.type === "private") return false;
+
+  const data = await kvGet(env, `user:${chatId}:${userId}`, null) || {};
+  let chatTitle = String(message?.chat?.title || "گروه");
+  try {
+    const result = await telegram("getChat", env, { chat_id: chatId });
+    chatTitle = String(result?.result?.title || chatTitle);
+  } catch {}
+
+  const members = await getGroupMemberStats(env, chatId);
+  const rankIndex = members.findIndex(member => Number(member.id) === userId);
+  const rank = rankIndex >= 0 ? rankIndex + 1 : 1;
+  const name = [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || "بدون نام";
+  const username = user.username ? `@${user.username}` : "ندارد";
+  const messages = Number(data.messages || 0);
+
+  const text = [
+    "👤 <b>آمار من</b>",
+    "",
+    `🏠 گپ: <b>${escapeHTML(chatTitle)}</b>`,
+    `👤 نام: <b>${escapeHTML(name)}</b>`,
+    `🔹 نام کاربری: <b>${escapeHTML(username)}</b>`,
+    `🆔 آیدی: <code>${userId}</code>`,
+    `💬 تعداد پیام‌ها: <b>${messages}</b>`,
+    `🏆 رتبه از نظر پیام: <b>${rank}</b> از <b>${members.length}</b>`,
+    "",
+    "🎞️ <b>فعالیت رسانه‌ای</b>",
+    `🎤 ویس: <b>${Number(data.voiceMessages || 0)}</b>`,
+    `🎵 آهنگ: <b>${Number(data.audioMessages || 0)}</b>`,
+    `🖼️ عکس: <b>${Number(data.photoMessages || 0)}</b>`,
+    `🎬 ویدیو: <b>${Number(data.videoMessages || 0)}</b>`,
+    `📁 فایل: <b>${Number(data.documentMessages || 0)}</b>`,
+    `🎞️ GIF: <b>${Number(data.animationMessages || 0)}</b>`,
+    `↪️ فوروارد: <b>${Number(data.forwardedMessages || 0)}</b>`
+  ].join("\n");
+
+  await sendMessage(env, chatId, text, {
+    reply_to_message_id: message.message_id
+  });
+  return true;
+}
+
+/* =========================
    STATS COMMAND
 ========================= */
 
@@ -30797,19 +30794,32 @@ async function handleStatsCommand(
       message?.text
     );
 
+  const rawText = normalizeCommandText(message?.text || "");
+
   if (
-    !parsed ||
-    ![
-      "stats",
-      "stat",
-      "statistics",
-      "آمار",
-      "گزارش",
-      "آمار_گروه"
-    ].includes(
-      parsed.command
-    )
+    rawText === "آمار" ||
+    rawText === "آمار گپ" ||
+    rawText === "آمار_گپ" ||
+    rawText === "/آمار" ||
+    rawText === "/آمار گپ" ||
+    rawText === "/آمار_گپ" ||
+    rawText === "آمارم" ||
+    rawText === "/آمارم"
   ) {
+    if (rawText === "آمارم" || rawText === "/آمارم") {
+      return await showMyStats(message, env);
+    }
+    return await showGroupMemberStats(env, message.chat.id);
+  }
+
+  if (!parsed) {
+    return false;
+  }
+  if (rawText === "آمارم" || rawText === "/آمارم") {
+    return await showMyStats(message, env);
+  }
+
+  if (![`stats`, `stat`, `statistics`, `آمار`, `گزارش`, `آمار_گروه`].includes(parsed.command)) {
     return false;
   }
 
@@ -30822,21 +30832,7 @@ async function handleStatsCommand(
       0
     );
 
-  if (
-    !await isAdmin(
-      env,
-      chatId,
-      userId
-    )
-  ) {
-    await sendMessage(
-      env,
-      chatId,
-      "⛔ فقط مدیران می‌توانند آمار گروه را مشاهده کنند."
-    );
 
-    return true;
-  }
 
   await incrementStat(
     env,
@@ -30857,17 +30853,10 @@ async function handleStatsCommand(
       .replace(/\s+/g, " ")
       .toLowerCase() === "آمار گپ";
 
-  if (wantsGroupStats) {
-    await showGroupMemberStats(
-      env,
-      chatId
-    );
-  } else {
-    await showChatStats(
-      env,
-      chatId
-    );
-  }
+  await showGroupMemberStats(
+    env,
+    chatId
+  );
 
   return true;
 }
@@ -31380,7 +31369,8 @@ async function routeMessage(
         await updateUserActivity(
           env,
           message.chat.id,
-          message.from
+          message.from,
+          message
         );
       }
     } catch (
@@ -31394,6 +31384,41 @@ async function routeMessage(
       );
     }
 
+
+    /*
+     * Enforce configured locks before command handling.
+     * Locked content must not enter the group, regardless of role.
+     */
+
+    try {
+      const lockSettings = await getSettings(
+        env,
+        message.chat.id
+      );
+
+      if (
+        getLockedMediaType(message, lockSettings)
+      ) {
+        const lockedType = getLockedMediaType(
+          message,
+          lockSettings
+        );
+
+        await deleteAndNotify(
+          env,
+          message.chat.id,
+          message.message_id,
+          `🚫 ارسال <b>${escapeHTML(lockedType)}</b> در این گروه قفل است.`
+        );
+
+        return true;
+      }
+    } catch (error) {
+      console.error(
+        "Early lock enforcement:",
+        getSafeErrorMessage(error)
+      );
+    }
 
     /*
      * Admin panel commands.
@@ -31490,10 +31515,6 @@ async function routeMessage(
       return true;
     }
 
-    if (await enforceManagedUserRateLimit(message, env)) {
-      return true;
-    }
-
     if (
       await runBotHandler(
         "Bot Wake Word",
@@ -31502,6 +31523,10 @@ async function routeMessage(
         env
       )
     ) {
+      return true;
+    }
+
+    if (await enforceManagedUserRateLimit(message, env)) {
       return true;
     }
 
