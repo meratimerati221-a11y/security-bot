@@ -172,10 +172,20 @@ async function handleBotWakeWord(
     return false;
   }
 
+  const replies = [
+    "🤖 حاضر و آماده برای خدمتم!",
+    "🤖 چه کمکی از دستم برمیاد؟",
+    "🤖 بگو ببینم، چه کاری برات انجام بدم؟"
+  ];
+
+  const reply = replies[
+    Math.floor(Math.random() * replies.length)
+  ];
+
   await sendMessage(
     env,
     message.chat.id,
-    "🤖 حاضر و آماده‌ام!"
+    reply
   );
 
   return true;
@@ -377,6 +387,11 @@ async function kvDelete(
   await kv.delete(
     key
   );
+}
+
+async function kvList(env, prefix, limit = 1000) {
+  const kv = getKV(env);
+  return await kv.list({ prefix, limit });
 }
 
 
@@ -6169,6 +6184,23 @@ async function handleLogCallback(
     return true;
   }
 
+  if (String(data || "").startsWith("um:")) {
+    const actorId = Number(callback?.from?.id || 0);
+    const chatId = Number(callback?.message?.chat?.id || 0);
+    if (!chatId || !await isAdmin(env, chatId, actorId)) {
+      await answerCallback(env, callback?.id, "⛔ فقط مدیران دسترسی دارند.");
+      return true;
+    }
+    const [, targetId, permission, state] = String(data).split(":");
+    if (!targetId || !/^\d+$/.test(targetId)) {
+      await answerCallback(env, callback?.id, "⚠️ پنل کاربر هدف ندارد. پنل را با ریپلای روی پیام کاربر باز کن.");
+      return true;
+    }
+    await setManagedUserPermission(env, chatId, Number(targetId), permission, state === "on");
+    await answerCallback(env, callback?.id, state === "on" ? "مجوز فعال شد." : "مجوز غیرفعال شد.");
+    return true;
+  }
+
   return false;
 }
 /* ============================================================
@@ -10265,7 +10297,7 @@ function userManagementText() {
 }
 
 
-function userManagementKeyboard() {
+function userManagementKeyboard(targetId = "") {
   return {
     inline_keyboard: [
 
@@ -10954,7 +10986,8 @@ const BOT_COMMANDS = {
 
   start: [
     "/start",
-    "start"
+    "start",
+    "شروع"
   ],
 
   help: [
@@ -10977,7 +11010,9 @@ const BOT_COMMANDS = {
     "/admin",
     "/panel",
     "/مدیریت",
-    "/پنل"
+    "/پنل",
+    "پنل",
+    "مدیریت"
   ],
 
   rules: [
@@ -11001,7 +11036,9 @@ const BOT_COMMANDS = {
     "/سابقه_اخطار",
     "/سابقه_هشدار",
     "سابقه_اخطار",
-    "سابقه_هشدار"
+    "سابقه_هشدار",
+    "سابقه اخطار",
+    "سابقه هشدار"
   ],
 
   warn: [
@@ -11025,7 +11062,9 @@ const BOT_COMMANDS = {
     "/رفع_سکوت",
     "/رفع_محدودیت",
     "رفع_سکوت",
-    "رفع_محدودیت"
+    "رفع_محدودیت",
+    "رفع سکوت",
+    "رفع محدودیت"
   ],
 
   ban: [
@@ -11041,7 +11080,9 @@ const BOT_COMMANDS = {
     "/رفع_بن",
     "/رفع_مسدودیت",
     "رفع_بن",
-    "رفع_مسدودیت"
+    "رفع_مسدودیت",
+    "رفع بن",
+    "رفع مسدودیت"
   ],
 
   stats: [
@@ -11056,12 +11097,22 @@ const BOT_COMMANDS = {
   settings: [
     "/settings",
     "/config",
-    "/تنظیمات"
+    "/تنظیمات",
+    "تنظیمات"
   ],
 
   security: [
     "/security",
-    "/امنیت"
+    "/امنیت",
+    "امنیت"
+  ],
+
+  userManagement: [
+    "/usermanagement",
+    "/مدیریت_کاربر",
+    "/مدیریت_کاربران",
+    "مدیریت کاربر",
+    "مدیریت کاربران"
   ]
 
 };
@@ -11123,29 +11174,31 @@ function parseBotCommand(
       text
     );
 
+  if (!normalized) {
+    return null;
+  }
+
+  // First try the complete message so Persian multi-word commands
+  // such as "آمار گپ" and "رفع سکوت" work without a slash.
+  const fullCommand =
+    COMMAND_MAP.get(normalized);
+
+  if (fullCommand) {
+    return {
+      command: fullCommand,
+      token: normalized,
+      args: []
+    };
+  }
+
   const parts =
-    normalized.split(
-      /\s+/
-    );
+    normalized.split(/\s+/);
 
-  let commandToken =
-    parts.shift() || "";
-
-  /*
-   * Commands can be entered in both forms:
-   *
-   * /panel
-   * پنل
-   *
-   * Telegram may also send:
-   *
-   * /panel@BotUsername
-   */
+  const commandToken =
+    parts.shift();
 
   const commandWithoutBot =
-    commandToken.startsWith("/")
-      ? commandToken.split("@")[0]
-      : commandToken;
+    commandToken.split("@")[0];
 
   const command =
     COMMAND_MAP.get(
@@ -11158,10 +11211,8 @@ function parseBotCommand(
 
   return {
     command,
-    token:
-      commandWithoutBot,
-    args:
-      parts
+    token: commandWithoutBot,
+    args: parts
   };
 }
 
@@ -11761,6 +11812,254 @@ async function handleStartCommand(
 
 
 /* =========================
+   USER MANAGEMENT
+========================= */
+
+function userManagementKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        inlineButton("📨 پیام: مجاز", `um:${targetId}:messages:on`),
+        inlineButton("🚫 پیام: ممنوع", `um:${targetId}:messages:off`)
+      ],
+      [
+        inlineButton("🎞️ GIF: مجاز", `um:${targetId}:animation:on`),
+        inlineButton("🚫 GIF: ممنوع", `um:${targetId}:animation:off`)
+      ],
+      [
+        inlineButton("🎥 ویدیو: مجاز", `um:${targetId}:videos:on`),
+        inlineButton("🚫 ویدیو: ممنوع", `um:${targetId}:videos:off`)
+      ],
+      [
+        inlineButton("🖼️ عکس: مجاز", `um:${targetId}:photos:on`),
+        inlineButton("🚫 عکس: ممنوع", `um:${targetId}:photos:off`)
+      ],
+      [
+        inlineButton("📁 فایل: مجاز", `um:${targetId}:documents:on`),
+        inlineButton("🚫 فایل: ممنوع", `um:${targetId}:documents:off`)
+      ],
+      [
+        inlineButton("🎤 ویس: مجاز", `um:${targetId}:voices:on`),
+        inlineButton("🚫 ویس: ممنوع", `um:${targetId}:voices:off`)
+      ]
+    ]
+  };
+}
+
+function normalizeUserTargetText(value) {
+  return String(value || "")
+    .replace(/\u200c/g, " ")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+async function resolveManagedUser(env, chatId, message, targetText = "") {
+  const replied = message?.reply_to_message?.from;
+  if (replied?.id) return replied;
+
+  const raw = String(targetText || "").trim();
+  if (!raw) return null;
+
+  const idMatch = raw.match(/^<?(\d{4,})>?$/);
+  if (idMatch) {
+    const id = Number(idMatch[1]);
+    const profile = await kvGet(env, `user:${chatId}:${id}`, null);
+    return profile || { id, first_name: id };
+  }
+
+  const username = raw.replace(/^@/, "").toLowerCase();
+  const page = await kvList(env, `user:${chatId}:`, 1000);
+  let exact = null;
+  let nameMatch = null;
+
+  for (const item of page?.keys || []) {
+    const profile = await kvGet(env, item.name, null);
+    if (!profile || profile.isBot) continue;
+    const pUsername = String(profile.username || "").toLowerCase();
+    const display = normalizeUserTargetText(
+      `${profile.firstName || ""} ${profile.lastName || ""}`
+    );
+    if (pUsername && pUsername === username) exact = profile;
+    if (display && display === normalizeUserTargetText(raw)) nameMatch = profile;
+  }
+  return exact || nameMatch || null;
+}
+
+function userPermissionFields() {
+  return {
+    messages: "can_send_messages",
+    audios: "can_send_audios",
+    documents: "can_send_documents",
+    photos: "can_send_photos",
+    videos: "can_send_videos",
+    video_notes: "can_send_video_notes",
+    voice_notes: "can_send_voice_notes",
+    polls: "can_send_polls",
+    other: "can_send_other_messages",
+    animation: "can_send_other_messages"
+  };
+}
+
+async function setManagedUserPermission(env, chatId, userId, permission, allowed) {
+  if (isProtectedUser(userId)) return false;
+  const field = userPermissionFields()[permission];
+  if (!field) return false;
+
+  const current = await telegram("getChatMember", env, {
+    chat_id: chatId,
+    user_id: userId
+  });
+  const currentPerm = current?.result?.can_send_messages !== undefined
+    ? current.result
+    : {};
+
+  const permissions = {
+    can_send_messages: currentPerm.can_send_messages !== false,
+    can_send_audios: currentPerm.can_send_audios !== false,
+    can_send_documents: currentPerm.can_send_documents !== false,
+    can_send_photos: currentPerm.can_send_photos !== false,
+    can_send_videos: currentPerm.can_send_videos !== false,
+    can_send_video_notes: currentPerm.can_send_video_notes !== false,
+    can_send_voice_notes: currentPerm.can_send_voice_notes !== false,
+    can_send_polls: currentPerm.can_send_polls !== false,
+    can_send_other_messages: currentPerm.can_send_other_messages !== false,
+    can_add_web_page_previews: currentPerm.can_add_web_page_previews !== false,
+    can_invite_users: currentPerm.can_invite_users !== false
+  };
+
+  permissions[field] = Boolean(allowed);
+  await telegram("restrictChatMember", env, {
+    chat_id: chatId,
+    user_id: userId,
+    permissions
+  });
+  return true;
+}
+
+async function setManagedUserRateLimit(env, chatId, userId, seconds) {
+  const key = `user-rate:${chatId}:${userId}`;
+  if (!seconds) {
+    await kvDelete(env, key);
+    return true;
+  }
+  await kvPut(env, key, {
+    seconds: Math.max(1, Math.min(Number(seconds), 86400)),
+    updatedAt: Date.now()
+  });
+  return true;
+}
+
+async function enforceManagedUserRateLimit(message, env) {
+  const chatId = message?.chat?.id;
+  const userId = Number(message?.from?.id || 0);
+  if (!chatId || !userId) return false;
+  if (await isAdmin(env, chatId, userId)) return false;
+
+  const rule = await kvGet(env, `user-rate:${chatId}:${userId}`, null);
+  if (!rule?.seconds) return false;
+
+  const key = `user-rate-last:${chatId}:${userId}`;
+  const last = await kvGet(env, key, 0);
+  const now = Date.now();
+  if (now - Number(last || 0) < Number(rule.seconds) * 1000) {
+    try { await deleteUserMessage(env, message); } catch (_) {}
+    return true;
+  }
+  await kvPut(env, key, now);
+  return false;
+}
+
+async function handleUserManagementCommand(message, env) {
+  const parsed = parseBotCommand(message?.text);
+  if (!parsed || parsed.command !== "userManagement") return false;
+  const chat = message?.chat;
+  if (!chat || !["group", "supergroup"].includes(chat.type)) {
+    await sendMessage(env, chat?.id, "⚠️ مدیریت کاربران فقط داخل گروه قابل استفاده است.");
+    return true;
+  }
+  const actor = Number(message.from?.id || 0);
+  if (!await isAdmin(env, chat.id, actor)) {
+    await sendMessage(env, chat.id, "⛔ فقط مدیران می‌توانند کاربران را مدیریت کنند.");
+    return true;
+  }
+  const panelTarget = message.reply_to_message?.from?.id || "";
+  await sendMessage(env, chat.id, [
+    "👥 <b>مدیریت کاربران</b>", "",
+    "برای مدیریت کاربر، روی پیام او ریپلای کن یا از شناسه/نام کاربری استفاده کن.",
+    "مثال‌ها:",
+    "<code>محدودیت کاربر 300</code> — محدودیت پیام هر ۵ دقیقه",
+    "<code>اجازه پیام</code> — با ریپلای",
+    "<code>ممنوع پیام</code> — با ریپلای",
+    "<code>اجازه گیف</code> / <code>ممنوع گیف</code>",
+    "<code>اجازه فیلم</code> / <code>ممنوع فیلم</code>",
+    "<code>اجازه عکس</code> / <code>ممنوع عکس</code>",
+    "<code>اجازه فایل</code> / <code>ممنوع فایل</code>",
+    "<code>اجازه ویس</code> / <code>ممنوع ویس</code>"
+  ].join("\n"), { reply_markup: userManagementKeyboard() });
+  return true;
+}
+
+async function handleUserManagementNaturalCommand(message, env) {
+  const text = normalizeUserTargetText(message?.text);
+  const patterns = [
+    ["اجازه پیام", "messages", true], ["ممنوع پیام", "messages", false],
+    ["اجازه گیف", "animation", true], ["ممنوع گیف", "animation", false],
+    ["اجازه فیلم", "videos", true], ["ممنوع فیلم", "videos", false],
+    ["اجازه ویدیو", "videos", true], ["ممنوع ویدیو", "videos", false],
+    ["اجازه عکس", "photos", true], ["ممنوع عکس", "photos", false],
+    ["اجازه فایل", "documents", true], ["ممنوع فایل", "documents", false],
+    ["اجازه ویس", "voice_notes", true], ["ممنوع ویس", "voice_notes", false],
+    ["اجازه آهنگ", "audios", true], ["ممنوع آهنگ", "audios", false],
+    ["اجازه نظرسنجی", "polls", true], ["ممنوع نظرسنجی", "polls", false]
+  ];
+  const found = patterns.find(([prefix]) => text === prefix || text.startsWith(prefix + " "));
+  const rateMatch = text.match(/^(?:محدودیت پیام|محدودیت کاربر)\s+(.+)$/);
+  const clearRate = /^(?:رفع محدودیت پیام|رفع محدودیت کاربر)$/.test(text);
+  if (!found && !rateMatch && !clearRate) return false;
+
+  const chat = message?.chat;
+  if (!chat || !["group", "supergroup"].includes(chat.type)) return false;
+  const actor = Number(message.from?.id || 0);
+  if (!await isAdmin(env, chat.id, actor)) {
+    await sendMessage(env, chat.id, "⛔ فقط مدیران می‌توانند این تنظیم را تغییر دهند.");
+    return true;
+  }
+
+  let targetText = "";
+  if (message.reply_to_message?.from) targetText = "";
+  else if (found) targetText = text.slice(found[0].length).trim();
+  else if (rateMatch) targetText = rateMatch[1].trim().replace(/\s+(?:دقیقه|دقیقه‌ای|ثانیه)$/i, "").trim();
+
+  const target = await resolveManagedUser(env, chat.id, message, targetText);
+  if (!target?.id) {
+    await sendMessage(env, chat.id, "⚠️ کاربر پیدا نشد. روی پیامش ریپلای کن یا آیدی/نام کاربری دقیق او را بنویس.");
+    return true;
+  }
+  const userId = Number(target.id);
+
+  if (clearRate) {
+    await setManagedUserRateLimit(env, chat.id, userId, 0);
+    await sendMessage(env, chat.id, "✅ محدودیت زمانی پیام کاربر برداشته شد.");
+    return true;
+  }
+  if (rateMatch) {
+    const amount = Number((rateMatch[1].match(/\d+(?:\.\d+)?/) || ["0"])[0]);
+    const seconds = /دقیقه/.test(rateMatch[1]) ? amount * 60 : amount;
+    await setManagedUserRateLimit(env, chat.id, userId, seconds);
+    await sendMessage(env, chat.id, `⏱️ محدودیت ارسال پیام برای <b>${escapeHTML(displayName(target))}</b> تنظیم شد: هر <b>${seconds}</b> ثانیه.`);
+    return true;
+  }
+
+  const [, permission, allowed] = found;
+  await setManagedUserPermission(env, chat.id, userId, permission, allowed);
+  const state = allowed ? "مجاز" : "ممنوع";
+  await sendMessage(env, chat.id, `✅ ارسال ${escapeHTML(found[0].replace(/^اجازه |^ممنوع /, ""))} برای <b>${escapeHTML(displayName(target))}</b> ${state} شد.`);
+  return true;
+}
+
+
+/* =========================
    COMMAND ROUTER
 ========================= */
 
@@ -11786,6 +12085,19 @@ async function routeBotCommand(
     "start"
   ) {
     return await handleStartCommand(
+      message,
+      env
+    );
+  }
+
+
+  /* USER MANAGEMENT */
+
+  if (
+    parsed.command ===
+    "userManagement"
+  ) {
+    return await handleUserManagementCommand(
       message,
       env
     );
@@ -31102,10 +31414,25 @@ async function routeMessage(
       return true;
     }
 
+    if (await enforceManagedUserRateLimit(message, env)) {
+      return true;
+    }
+
     if (
       await runBotHandler(
         "Bot Wake Word",
         handleBotWakeWord,
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      await runBotHandler(
+        "User Management",
+        handleUserManagementNaturalCommand,
         message,
         env
       )
