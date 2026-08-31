@@ -73,6 +73,104 @@ function json(data, status = 200) {
 
 
 /* =========================
+   OPENAI AI ASSISTANT
+========================= */
+
+async function askOpenAI(env, userText, chatType = "private") {
+  if (!env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is missing");
+  }
+
+  const response = await fetch(
+    "https://api.openai.com/v1/responses",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "authorization": `Bearer ${env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "gpt-5.6-luna",
+        instructions:
+          "تو دستیار هوش مصنوعی یک ربات مدیریت گروه تلگرام هستی. پاسخ‌ها را فارسی، کوتاه، دقیق و دوستانه بده. دستورات مدیریتی ربات را خودت اجرا نکن؛ آن‌ها توسط سیستم مدیریت ربات پردازش می‌شوند. اگر درخواست کاربر مبهم است، کوتاه سؤال روشن‌کننده بپرس.",
+        input: String(userText || "").slice(0, 12000),
+        max_output_tokens: 700
+      })
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      `OpenAI API ${response.status}: ${JSON.stringify(data).slice(0, 500)}`
+    );
+  }
+
+  if (typeof data.output_text === "string" && data.output_text.trim()) {
+    return data.output_text.trim();
+  }
+
+  const chunks = [];
+  for (const item of data.output || []) {
+    for (const content of item.content || []) {
+      if (content.type === "output_text" && content.text) {
+        chunks.push(content.text);
+      }
+    }
+  }
+
+  return chunks.join("\n").trim();
+}
+
+async function handleAIMessage(message, env) {
+  const text = String(message?.text || message?.caption || "").trim();
+  if (!text) return false;
+
+  const chatType = message?.chat?.type || "private";
+  const isPrivate = chatType === "private";
+  const mentionsRobot = /(?:^|[\s،,!؟])(?:ربات|روبات)(?:$|[\s،,!؟])/i.test(text);
+  const repliedToBot = Boolean(
+    message?.reply_to_message?.from?.is_bot
+  );
+
+  // In groups, AI only answers when explicitly addressed, so it does not
+  // reply to every ordinary group message and interfere with moderation.
+  if (!isPrivate && !mentionsRobot && !repliedToBot) {
+    return false;
+  }
+
+  try {
+    await telegram("sendChatAction", env, {
+      chat_id: message.chat.id,
+      action: "typing"
+    });
+
+    const answer = await askOpenAI(
+      env,
+      text,
+      chatType
+    );
+
+    if (!answer) return false;
+
+    await telegram("sendMessage", env, {
+      chat_id: message.chat.id,
+      text: answer.slice(0, 4096),
+      reply_to_message_id: message.message_id
+    });
+
+    return true;
+  } catch (error) {
+    console.error(
+      "AI message:",
+      getSafeErrorMessage(error)
+    );
+    return false;
+  }
+}
+
+/* =========================
    TELEGRAM API
 ========================= */
 
@@ -31237,6 +31335,17 @@ async function routeMessage(
       return true;
     }
 
+    if (
+      await runBotHandler(
+        "AI Assistant",
+        handleAIMessage,
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
     return false;
   }
 
@@ -31500,6 +31609,23 @@ async function routeMessage(
       ) {
         return true;
       }
+    }
+
+
+    /*
+     * AI assistant. Runs only after commands, moderation and management
+     * handlers so it cannot consume or replace those features.
+     */
+
+    if (
+      await runBotHandler(
+        "AI Assistant",
+        handleAIMessage,
+        message,
+        env
+      )
+    ) {
+      return true;
     }
 
 
