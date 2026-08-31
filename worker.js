@@ -10300,33 +10300,30 @@ function userManagementText() {
 function userManagementKeyboard(targetId = "") {
   return {
     inline_keyboard: [
-
       [
-        inlineButton(
-          "⚠️ راهنمای اخطار",
-          "help:warn"
-        )
+        inlineButton("📨 پیام: مجاز", `um:${targetId}:messages:on`),
+        inlineButton("🚫 پیام: ممنوع", `um:${targetId}:messages:off`)
       ],
-
       [
-        inlineButton(
-          "🔇 راهنمای سکوت",
-          "help:mute"
-        ),
-
-        inlineButton(
-          "🚫 راهنمای مسدودسازی",
-          "help:ban"
-        )
+        inlineButton("🎞️ GIF: مجاز", `um:${targetId}:animation:on`),
+        inlineButton("🚫 GIF: ممنوع", `um:${targetId}:animation:off`)
       ],
-
       [
-        inlineButton(
-          "🔙 پنل اصلی",
-          "admin:main"
-        )
+        inlineButton("🎥 ویدیو: مجاز", `um:${targetId}:videos:on`),
+        inlineButton("🚫 ویدیو: ممنوع", `um:${targetId}:videos:off`)
+      ],
+      [
+        inlineButton("🖼️ عکس: مجاز", `um:${targetId}:photos:on`),
+        inlineButton("🚫 عکس: ممنوع", `um:${targetId}:photos:off`)
+      ],
+      [
+        inlineButton("📁 فایل: مجاز", `um:${targetId}:documents:on`),
+        inlineButton("🚫 فایل: ممنوع", `um:${targetId}:documents:off`)
+      ],
+      [
+        inlineButton("🎤 ویس: مجاز", `um:${targetId}:voices:on`),
+        inlineButton("🚫 ویس: ممنوع", `um:${targetId}:voices:off`)
       ]
-
     ]
   };
 }
@@ -11814,37 +11811,6 @@ async function handleStartCommand(
 /* =========================
    USER MANAGEMENT
 ========================= */
-
-function userManagementKeyboard() {
-  return {
-    inline_keyboard: [
-      [
-        inlineButton("📨 پیام: مجاز", `um:${targetId}:messages:on`),
-        inlineButton("🚫 پیام: ممنوع", `um:${targetId}:messages:off`)
-      ],
-      [
-        inlineButton("🎞️ GIF: مجاز", `um:${targetId}:animation:on`),
-        inlineButton("🚫 GIF: ممنوع", `um:${targetId}:animation:off`)
-      ],
-      [
-        inlineButton("🎥 ویدیو: مجاز", `um:${targetId}:videos:on`),
-        inlineButton("🚫 ویدیو: ممنوع", `um:${targetId}:videos:off`)
-      ],
-      [
-        inlineButton("🖼️ عکس: مجاز", `um:${targetId}:photos:on`),
-        inlineButton("🚫 عکس: ممنوع", `um:${targetId}:photos:off`)
-      ],
-      [
-        inlineButton("📁 فایل: مجاز", `um:${targetId}:documents:on`),
-        inlineButton("🚫 فایل: ممنوع", `um:${targetId}:documents:off`)
-      ],
-      [
-        inlineButton("🎤 ویس: مجاز", `um:${targetId}:voices:on`),
-        inlineButton("🚫 ویس: ممنوع", `um:${targetId}:voices:off`)
-      ]
-    ]
-  };
-}
 
 function normalizeUserTargetText(value) {
   return String(value || "")
