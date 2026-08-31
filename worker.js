@@ -140,6 +140,47 @@ async function sendMessage(
 }
 
 
+/* ============================================================
+   BOT WAKE WORD / MENTION RESPONSE
+   Responds when a user says "ربات" or "روبات".
+============================================================ */
+async function handleBotWakeWord(
+  message,
+  env
+) {
+  const text =
+    typeof message?.text === "string"
+      ? message.text
+      : typeof message?.caption === "string"
+        ? message.caption
+        : "";
+
+  if (!text) {
+    return false;
+  }
+
+  const normalized =
+    text
+      .replace(/[\u200c\u200f]/g, "")
+      .toLowerCase();
+
+  if (
+    !/(^|[\s،,.!?؟؛:(){}\[\]"'«»])(?:ربات|روبات)(?=$|[\s،,.!?؟؛:(){}\[\]"'«»])/.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+
+  await sendMessage(
+    env,
+    message.chat.id,
+    "🤖 حاضر و آماده‌ام!"
+  );
+
+  return true;
+}
+
 async function editMessage(
   env,
   chatId,
@@ -6394,9 +6435,9 @@ async function promoteUser__legacy_1(
     can_manage_topics: true
   };
 
-  await telegram(
-    env,
-    "promoteChatMember",
+  await telegram("promoteChatMember",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -6443,9 +6484,9 @@ async function demoteUser__legacy_1(
     can_manage_topics: false
   };
 
-  await telegram(
-    env,
-    "promoteChatMember",
+  await telegram("promoteChatMember",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -6493,9 +6534,9 @@ async function setGroupTitle(
     return false;
   }
 
-  await telegram(
-    env,
-    "setChatTitle",
+  await telegram("setChatTitle",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -6537,9 +6578,9 @@ async function setGroupDescription(
         255
       );
 
-  await telegram(
-    env,
-    "setChatDescription",
+  await telegram("setChatDescription",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -6569,9 +6610,9 @@ async function pinMessage__legacy_1(
   messageId,
   silent = false
 ) {
-  await telegram(
-    env,
-    "pinChatMessage",
+  await telegram("pinChatMessage",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -6606,9 +6647,9 @@ async function unpinMessage__legacy_1(
   chatId,
   messageId
 ) {
-  await telegram(
-    env,
-    "unpinChatMessage",
+  await telegram("unpinChatMessage",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -6640,9 +6681,9 @@ async function getChatMember__legacy_2(
   chatId,
   userId
 ) {
-  return await telegram(
-    env,
-    "getChatMember",
+  return await telegram("getChatMember",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -6662,9 +6703,9 @@ async function getChatAdministrators(
   env,
   chatId
 ) {
-  return await telegram(
-    env,
-    "getChatAdministrators",
+  return await telegram("getChatAdministrators",
+      env,
+      
     {
       chat_id:
         chatId
@@ -6681,9 +6722,9 @@ async function getGroupInfo(
   env,
   chatId
 ) {
-  return await telegram(
-    env,
-    "getChat",
+  return await telegram("getChat",
+      env,
+      
     {
       chat_id:
         chatId
@@ -9101,9 +9142,9 @@ async function restrictUser(
     return false;
   }
 
-  await telegram(
-    env,
-    "restrictChatMember",
+  await telegram("restrictChatMember",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -9160,9 +9201,9 @@ async function unrestrictUser(
   chatId,
   userId
 ) {
-  await telegram(
-    env,
-    "restrictChatMember",
+  await telegram("restrictChatMember",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -11646,7 +11687,9 @@ function parseDuration(value) {
 
 async function getBotId(env) {
   try {
-    const response = await telegram(env, "getMe", {});
+    const response = await telegram("getMe",
+      env,
+       {});
     return Number(response?.id || response?.result?.id || 0);
   } catch (error) {
     console.error("getBotId:", getSafeErrorMessage(error));
@@ -12053,9 +12096,9 @@ async function deleteMessage(
   }
 
   try {
-    await telegram(
+    await telegram("deleteMessage",
       env,
-      "deleteMessage",
+      
       {
         chat_id: chatId,
         message_id: messageId
@@ -12099,9 +12142,9 @@ async function banUser(
   }
 
   try {
-    await telegram(
+    await telegram("banChatMember",
       env,
-      "banChatMember",
+      
       {
         chat_id: chatId,
         user_id: userId,
@@ -12148,9 +12191,9 @@ async function unbanUser(
   }
 
   try {
-    await telegram(
+    await telegram("unbanChatMember",
       env,
-      "unbanChatMember",
+      
       {
         chat_id: chatId,
         user_id: userId,
@@ -12213,9 +12256,9 @@ async function promoteUser(
   };
 
   try {
-    await telegram(
+    await telegram("promoteChatMember",
       env,
-      "promoteChatMember",
+      
       {
         chat_id: chatId,
         user_id: userId,
@@ -12263,9 +12306,9 @@ async function demoteUser(
   }
 
   try {
-    await telegram(
+    await telegram("promoteChatMember",
       env,
-      "promoteChatMember",
+      
       {
         chat_id: chatId,
         user_id: userId,
@@ -12324,9 +12367,9 @@ async function getChatMember(
 
   try {
     const result =
-      await telegram(
-        env,
-        "getChatMember",
+      await telegram("getChatMember",
+      env,
+      
         {
           chat_id: chatId,
           user_id: userId
@@ -12611,9 +12654,9 @@ async function pinMessage(
   disableNotification = false
 ) {
   try {
-    await telegram(
+    await telegram("pinChatMessage",
       env,
-      "pinChatMessage",
+      
       {
         chat_id: chatId,
         message_id: messageId,
@@ -12654,9 +12697,9 @@ async function unpinMessage(
   messageId
 ) {
   try {
-    await telegram(
+    await telegram("unpinChatMessage",
       env,
-      "unpinChatMessage",
+      
       {
         chat_id: chatId,
         message_id: messageId
@@ -12685,9 +12728,9 @@ async function getChatInfo(
   chatId
 ) {
   try {
-    return await telegram(
+    return await telegram("getChat",
       env,
-      "getChat",
+      
       {
         chat_id: chatId
       }
@@ -12713,9 +12756,9 @@ async function getChatMemberCount(
 ) {
   try {
     const count =
-      await telegram(
-        env,
-        "getChatMemberCount",
+      await telegram("getChatMemberCount",
+      env,
+      
         {
           chat_id: chatId
         }
@@ -15843,9 +15886,9 @@ async function muteUser(
     ) + duration;
 
   try {
-    await telegram(
+    await telegram("restrictChatMember",
       env,
-      "restrictChatMember",
+      
       {
         chat_id:
           chatId,
@@ -15944,9 +15987,9 @@ async function unmuteUser(
   }
 
   try {
-    await telegram(
+    await telegram("restrictChatMember",
       env,
-      "restrictChatMember",
+      
       {
         chat_id:
           chatId,
@@ -17149,9 +17192,9 @@ async function getGroupInformation(
   chatId
 ) {
   try {
-    return await telegram(
+    return await telegram("getChat",
       env,
-      "getChat",
+      
       {
         chat_id:
           chatId
@@ -17192,9 +17235,9 @@ async function buildGroupInfoText(
 
   try {
     memberCount =
-      await telegram(
-        env,
-        "getChatMemberCount",
+      await telegram("getChatMemberCount",
+      env,
+      
         {
           chat_id:
             chatId
@@ -17372,9 +17415,9 @@ async function deleteBotMessage(
   }
 
   try {
-    await telegram(
+    await telegram("deleteMessage",
       env,
-      "deleteMessage",
+      
       {
         chat_id:
           chatId,
@@ -17415,9 +17458,9 @@ async function pinGroupMessage(
   }
 
   try {
-    await telegram(
+    await telegram("pinChatMessage",
       env,
-      "pinChatMessage",
+      
       {
         chat_id:
           chatId,
@@ -17467,9 +17510,9 @@ async function unpinGroupMessage(
         messageId;
     }
 
-    await telegram(
+    await telegram("unpinChatMessage",
       env,
-      "unpinChatMessage",
+      
       payload
     );
 
@@ -20000,9 +20043,9 @@ async function getGroupAdminIds(
 ) {
   try {
     const admins =
-      await telegram(
-        env,
-        "getChatAdministrators",
+      await telegram("getChatAdministrators",
+      env,
+      
         {
           chat_id:
             chatId
@@ -20666,9 +20709,9 @@ async function sendAdminPanel(
   );
 
   try {
-    await telegram(
+    await telegram("sendMessage",
       env,
-      "sendMessage",
+      
       {
         chat_id:
           chatId,
@@ -20766,9 +20809,9 @@ async function showSecurityPanel(
     "\n"
   );
 
-  return await telegram(
-    env,
-    "editMessageText",
+  return await telegram("editMessageText",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -20805,9 +20848,9 @@ async function showSettingsPanel(
     "\n"
   );
 
-  return await telegram(
-    env,
-    "editMessageText",
+  return await telegram("editMessageText",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -20882,9 +20925,9 @@ async function showAntispamPanel(
     ]
   };
 
-  return await telegram(
-    env,
-    "editMessageText",
+  return await telegram("editMessageText",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -20969,9 +21012,9 @@ async function showLinkPanel(
     ]
   };
 
-  return await telegram(
-    env,
-    "editMessageText",
+  return await telegram("editMessageText",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -21044,9 +21087,9 @@ async function showReportPanel(
     ]
   };
 
-  return await telegram(
-    env,
-    "editMessageText",
+  return await telegram("editMessageText",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -21127,9 +21170,9 @@ async function handleAdminPanelCallback__legacy_2(
     )
   ) {
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -21155,9 +21198,9 @@ async function handleAdminPanelCallback__legacy_2(
     data ===
     "panel:main"
   ) {
-    await telegram(
+    await telegram("editMessageText",
       env,
-      "editMessageText",
+      
       {
         chat_id:
           chatId,
@@ -21356,9 +21399,9 @@ async function handleAdminPanelCallback__legacy_2(
     data ===
     "panel:refresh"
   ) {
-    await telegram(
+    await telegram("editMessageText",
       env,
-      "editMessageText",
+      
       {
         chat_id:
           chatId,
@@ -21392,9 +21435,9 @@ async function handleAdminPanelCallback__legacy_2(
   ========================= */
 
   try {
-    await telegram(
+    await telegram("answerCallbackQuery",
       env,
-      "answerCallbackQuery",
+      
       {
         callback_query_id:
           callback.id
@@ -21821,9 +21864,9 @@ async function getTelegramMemberInfo(
   userId
 ) {
   try {
-    return await telegram(
+    return await telegram("getChatMember",
       env,
-      "getChatMember",
+      
       {
         chat_id:
           chatId,
@@ -22777,9 +22820,9 @@ async function sendAdvancedPoll(
 
   try {
     const result =
-      await telegram(
-        env,
-        "sendMessage",
+      await telegram("sendMessage",
+      env,
+      
         {
           chat_id:
             poll.chatId,
@@ -23064,9 +23107,9 @@ async function updatePollMessage(
   }
 
   try {
-    await telegram(
+    await telegram("editMessageText",
       env,
-      "editMessageText",
+      
       {
         chat_id:
           poll.chatId,
@@ -23395,9 +23438,9 @@ async function handlePollCallback(
 
   if (!poll) {
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -23432,9 +23475,9 @@ async function handlePollCallback(
       );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -23467,9 +23510,9 @@ async function handlePollCallback(
     "pollresults"
   ) {
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id
@@ -23478,9 +23521,9 @@ async function handlePollCallback(
     } catch {}
 
     try {
-      await telegram(
-        env,
-        "editMessageText",
+      await telegram("editMessageText",
+      env,
+      
         {
           chat_id:
             chatId,
@@ -23548,9 +23591,9 @@ async function handlePollCallback(
       );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -24021,9 +24064,9 @@ async function sendRules(
     return false;
   }
 
-  await telegram(
-    env,
-    "sendMessage",
+  await telegram("sendMessage",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -24342,9 +24385,9 @@ async function handleRulesCommand__legacy_4(
      DEFAULT VIEW
   ========================= */
 
-  await telegram(
-    env,
-    "sendMessage",
+  await telegram("sendMessage",
+      env,
+      
     {
       chat_id:
         chatId,
@@ -24437,9 +24480,9 @@ async function handleRulesCallback__legacy_2(
     data ===
     "rules:view"
   ) {
-    await telegram(
+    await telegram("editMessageText",
       env,
-      "editMessageText",
+      
       {
         chat_id:
           chatId,
@@ -24463,9 +24506,9 @@ async function handleRulesCallback__legacy_2(
     );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id
@@ -24485,9 +24528,9 @@ async function handleRulesCallback__legacy_2(
     data ===
     "rules:refresh"
   ) {
-    await telegram(
+    await telegram("editMessageText",
       env,
-      "editMessageText",
+      
       {
         chat_id:
           chatId,
@@ -24511,9 +24554,9 @@ async function handleRulesCallback__legacy_2(
     );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -24538,9 +24581,9 @@ async function handleRulesCallback__legacy_2(
   ) {
     if (!admin) {
       try {
-        await telegram(
-          env,
-          "answerCallbackQuery",
+        await telegram("answerCallbackQuery",
+      env,
+      
           {
             callback_query_id:
               callback.id,
@@ -24569,9 +24612,9 @@ async function handleRulesCallback__legacy_2(
       config
     );
 
-    await telegram(
+    await telegram("editMessageText",
       env,
-      "editMessageText",
+      
       {
         chat_id:
           chatId,
@@ -24595,9 +24638,9 @@ async function handleRulesCallback__legacy_2(
     );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -24626,9 +24669,9 @@ async function handleRulesCallback__legacy_2(
   ) {
     if (!admin) {
       try {
-        await telegram(
-          env,
-          "answerCallbackQuery",
+        await telegram("answerCallbackQuery",
+      env,
+      
           {
             callback_query_id:
               callback.id,
@@ -24669,9 +24712,9 @@ async function handleRulesCallback__legacy_2(
           );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -25447,9 +25490,9 @@ async function deleteLinkMessage(
   messageId
 ) {
   try {
-    await telegram(
+    await telegram("deleteMessage",
       env,
-      "deleteMessage",
+      
       {
         chat_id:
           chatId,
@@ -25498,9 +25541,9 @@ async function muteLinkUser(
     );
 
   try {
-    await telegram(
+    await telegram("restrictChatMember",
       env,
-      "restrictChatMember",
+      
       {
         chat_id:
           chatId,
@@ -27586,9 +27629,9 @@ async function deletePreviousWelcome(
   }
 
   try {
-    await telegram(
+    await telegram("deleteMessage",
       env,
-      "deleteMessage",
+      
       {
         chat_id:
           chatId,
@@ -27707,9 +27750,9 @@ async function sendWelcomeMessage(
 
   try {
     const result =
-      await telegram(
-        env,
-        "sendMessage",
+      await telegram("sendMessage",
+      env,
+      
         {
           chat_id:
             chatId,
@@ -28450,9 +28493,9 @@ async function showAdminPanel(
       messageId;
 
     try {
-      await telegram(
-        env,
-        "editMessageText",
+      await telegram("editMessageText",
+      env,
+      
         payload
       );
 
@@ -28463,9 +28506,9 @@ async function showAdminPanel(
     }
   }
 
-  await telegram(
-    env,
-    "sendMessage",
+  await telegram("sendMessage",
+      env,
+      
     payload
   );
 
@@ -28587,9 +28630,9 @@ async function handleAdminPanelCallback(
     )
   ) {
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -28622,9 +28665,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -28669,9 +28712,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -28718,9 +28761,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -28767,9 +28810,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -28816,9 +28859,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -28881,9 +28924,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram(
-        env,
-        "editMessageText",
+      await telegram("editMessageText",
+      env,
+      
         {
           chat_id:
             chatId,
@@ -28914,9 +28957,9 @@ async function handleAdminPanelCallback(
     } catch {}
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id
@@ -29118,9 +29161,9 @@ async function showGroupRules(
       editMessageId
     ) {
       try {
-        await telegram(
-          env,
-          "editMessageText",
+        await telegram("editMessageText",
+      env,
+      
           {
             chat_id:
               chatId,
@@ -29169,9 +29212,9 @@ async function showGroupRules(
     editMessageId
   ) {
     try {
-      await telegram(
-        env,
-        "editMessageText",
+      await telegram("editMessageText",
+      env,
+      
         {
           chat_id:
             chatId,
@@ -29209,9 +29252,9 @@ async function showGroupRules(
   }
 
   try {
-    await telegram(
+    await telegram("sendMessage",
       env,
-      "sendMessage",
+      
       {
         chat_id:
           chatId,
@@ -29541,9 +29584,9 @@ async function handleRulesCallback(
     );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -29568,9 +29611,9 @@ async function handleRulesCallback(
       );
 
     try {
-      await telegram(
-        env,
-        "editMessageText",
+      await telegram("editMessageText",
+      env,
+      
         {
           chat_id:
             chatId,
@@ -29593,9 +29636,9 @@ async function handleRulesCallback(
     } catch {}
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id
@@ -30004,9 +30047,9 @@ async function showChatStats(
 
   try {
     const result =
-      await telegram(
-        env,
-        "getChat",
+      await telegram("getChat",
+      env,
+      
         {
           chat_id:
             chatId
@@ -30050,9 +30093,9 @@ async function showChatStats(
       messageId;
 
     try {
-      await telegram(
-        env,
-        "editMessageText",
+      await telegram("editMessageText",
+      env,
+      
         payload
       );
 
@@ -30064,9 +30107,9 @@ async function showChatStats(
   }
 
   try {
-    await telegram(
+    await telegram("sendMessage",
       env,
-      "sendMessage",
+      
       payload
     );
 
@@ -30272,9 +30315,9 @@ async function handleStatsCallback(
     )
   ) {
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -30302,9 +30345,9 @@ async function handleStatsCallback(
     );
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -30462,12 +30505,13 @@ async function routeCallbackQuery(
         "admin:"
       )
     ) {
-      return await runBotHandler(
+      const handled = await runBotHandler(
         "Admin Callback",
         handleAdminPanelCallback,
         callback,
         env
       );
+      if (handled) return true;
     }
 
 
@@ -30476,12 +30520,13 @@ async function routeCallbackQuery(
         "rules:"
       )
     ) {
-      return await runBotHandler(
+      const handled = await runBotHandler(
         "Rules Callback",
         handleRulesCallback,
         callback,
         env
       );
+      if (handled) return true;
     }
 
 
@@ -30490,12 +30535,13 @@ async function routeCallbackQuery(
         "stats:"
       )
     ) {
-      return await runBotHandler(
+      const handled = await runBotHandler(
         "Stats Callback",
         handleStatsCallback,
         callback,
         env
       );
+      if (handled) return true;
     }
 
 
@@ -30520,9 +30566,9 @@ async function routeCallbackQuery(
      */
 
     try {
-      await telegram(
-        env,
-        "answerCallbackQuery",
+      await telegram("answerCallbackQuery",
+      env,
+      
         {
           callback_query_id:
             callback.id,
@@ -30607,6 +30653,17 @@ async function routeMessage(
       await runBotHandler(
         "Private Natural Commands",
         handleNaturalCommandText,
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      await runBotHandler(
+        "Bot Wake Word",
+        handleBotWakeWord,
         message,
         env
       )
@@ -30739,6 +30796,17 @@ async function routeMessage(
       await runBotHandler(
         "Message Tools",
         async (msg, runtimeEnv) => routeMessageTools(msg, runtimeEnv),
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      await runBotHandler(
+        "Bot Wake Word",
+        handleBotWakeWord,
         message,
         env
       )
