@@ -5216,13 +5216,15 @@ const COMMAND_ALIASES = {
   "/security":
     [
       "/security",
-      "/امنیت"
+      "/امنیت",
+    "امنیت"
     ],
 
   "/settings":
     [
       "/settings",
-      "/تنظیمات"
+      "/تنظیمات",
+    "تنظیمات"
     ],
 
   "/rules":
@@ -10878,6 +10880,8 @@ async function handleAdminCommand(
     "/panel",
     "/مدیریت",
     "/پنل",
+    "مدیریت",
+    "پنل",
     "/پنل_مدیریت"
 
   ];
@@ -10956,13 +10960,17 @@ const BOT_COMMANDS = {
   help: [
     "/help",
     "/راهنما",
-    "/کمک"
+    "/کمک",
+    "راهنما",
+    "کمک"
   ],
 
   id: [
     "/id",
     "/شناسه",
-    "/آیدی"
+    "/آیدی",
+    "شناسه",
+    "آیدی"
   ],
 
   admin: [
@@ -10975,55 +10983,74 @@ const BOT_COMMANDS = {
   rules: [
     "/rules",
     "/قوانین",
-    "/قانون"
+    "/قانون",
+    "قوانین",
+    "قانون"
   ],
 
   warnings: [
     "/warnings",
     "/اخطارها",
-    "/هشدارها"
+    "/هشدارها",
+    "اخطارها",
+    "هشدارها"
   ],
 
   warningHistory: [
     "/warnhistory",
     "/سابقه_اخطار",
-    "/سابقه_هشدار"
+    "/سابقه_هشدار",
+    "سابقه_اخطار",
+    "سابقه_هشدار"
   ],
 
   warn: [
     "/warn",
     "/اخطار",
-    "/هشدار"
+    "/هشدار",
+    "اخطار",
+    "هشدار"
   ],
 
   mute: [
     "/mute",
     "/سکوت",
-    "/محدود"
+    "/محدود",
+    "سکوت",
+    "محدود"
   ],
 
   unmute: [
     "/unmute",
     "/رفع_سکوت",
-    "/رفع_محدودیت"
+    "/رفع_محدودیت",
+    "رفع_سکوت",
+    "رفع_محدودیت"
   ],
 
   ban: [
     "/ban",
     "/بن",
-    "/مسدود"
+    "/مسدود",
+    "بن",
+    "مسدود"
   ],
 
   unban: [
     "/unban",
     "/رفع_بن",
-    "/رفع_مسدودیت"
+    "/رفع_مسدودیت",
+    "رفع_بن",
+    "رفع_مسدودیت"
   ],
 
   stats: [
     "/stats",
     "/statistics",
-    "/آمار"
+    "/آمار",
+    "آمار",
+    "آمار گپ",
+    "/آمار گپ"
   ],
 
   settings: [
@@ -11096,32 +11123,29 @@ function parseBotCommand(
       text
     );
 
-  if (
-    !normalized.startsWith(
-      "/"
-    )
-  ) {
-    return null;
-  }
-
   const parts =
     normalized.split(
       /\s+/
     );
 
-  const commandToken =
-    parts.shift();
+  let commandToken =
+    parts.shift() || "";
 
   /*
-   * Telegram may send:
+   * Commands can be entered in both forms:
    *
-   * /help@BotUsername
+   * /panel
+   * پنل
+   *
+   * Telegram may also send:
+   *
+   * /panel@BotUsername
    */
 
   const commandWithoutBot =
-    commandToken.split(
-      "@"
-    )[0];
+    commandToken.startsWith("/")
+      ? commandToken.split("@")[0]
+      : commandToken;
 
   const command =
     COMMAND_MAP.get(
@@ -30129,6 +30153,250 @@ async function showChatStats(
 
 
 /* =========================
+   GROUP MEMBER STATS
+========================= */
+
+async function getGroupMemberStats(
+  env,
+  chatId
+) {
+  const kv = getKV(env);
+  const members = [];
+  let cursor = undefined;
+
+  do {
+    const page = await kv.list({
+      prefix: `user:${chatId}:`,
+      limit: 1000,
+      ...(cursor ? { cursor } : {})
+    });
+
+    for (const key of page.keys || []) {
+      try {
+        const data = await kvGet(
+          env,
+          key.name,
+          null
+        );
+
+        if (!data || data.isBot) continue;
+
+        const messages = Number(
+          data.messages || 0
+        );
+
+        if (messages <= 0) continue;
+
+        const firstName = String(
+          data.firstName || ""
+        ).trim();
+
+        const lastName = String(
+          data.lastName || ""
+        ).trim();
+
+        const username = String(
+          data.username || ""
+        ).trim();
+
+        const name =
+          [firstName, lastName]
+            .filter(Boolean)
+            .join(" ")
+            .trim() ||
+          (username ? `@${username}` : "بدون نام");
+
+        members.push({
+          id: Number(data.id || 0),
+          name,
+          username,
+          messages,
+          warnings: Number(data.warnings || 0),
+          deleted: Number(data.deleted || 0),
+          joins: Number(data.joins || 0),
+          leaves: Number(data.leaves || 0),
+          lastSeen: Number(data.lastSeen || 0)
+        });
+      } catch (error) {
+        console.error(
+          "Member stats read:",
+          error?.message || String(error)
+        );
+      }
+    }
+
+    cursor = page.list_complete
+      ? undefined
+      : page.cursor;
+  } while (cursor);
+
+  members.sort(
+    (a, b) =>
+      b.messages - a.messages ||
+      a.id - b.id
+  );
+
+  return members;
+}
+
+
+function buildGroupMemberStatsTexts(
+  stats,
+  members,
+  chat
+) {
+  const title = escapeHTML(
+    chat?.title || "گروه"
+  );
+
+  const totalMessages = members.reduce(
+    (sum, member) =>
+      sum + Number(member.messages || 0),
+    0
+  );
+
+  const totalWarnings = members.reduce(
+    (sum, member) =>
+      sum + Number(member.warnings || 0),
+    0
+  );
+
+  const totalDeleted = members.reduce(
+    (sum, member) =>
+      sum + Number(member.deleted || 0),
+    0
+  );
+
+  const activeMembers = members.length;
+
+  const header = [
+    "📊 <b>آمار گپ</b>",
+    "",
+    `🏠 گروه: <b>${title}</b>`,
+    "",
+    "📌 <b>خلاصه</b>",
+    `👥 اعضای فعال در آمار: <b>${activeMembers}</b>`,
+    `💬 مجموع پیام‌های ثبت‌شده: <b>${totalMessages}</b>`,
+    `⚠️ مجموع اخطارها: <b>${totalWarnings}</b>`,
+    `🗑️ مجموع پیام‌های حذف‌شده: <b>${totalDeleted}</b>`,
+    `🚫 بن‌ها: <b>${Number(stats.bans || 0)}</b>`,
+    `🔇 محدودیت‌ها: <b>${Number(stats.mutes || 0)}</b>`,
+    "",
+    "🏆 <b>رتبه‌بندی اعضا بر اساس تعداد پیام</b>",
+    ""
+  ];
+
+  const lines = members.map(
+    (member, index) => {
+      const safeName = escapeHTML(
+        member.name
+      );
+
+      const username =
+        member.username
+          ? ` (@${escapeHTML(member.username)})`
+          : "";
+
+      return [
+        `${index + 1}. ${safeName}${username}`,
+        `   🆔 <code>${member.id}</code> | 💬 <b>${member.messages}</b> پیام`
+      ].join("\n");
+    }
+  );
+
+  const chunks = [];
+  let current = header.join("\n");
+
+  for (const line of lines) {
+    const candidate =
+      `${current}\n${line}`;
+
+    if (candidate.length > 3800) {
+      chunks.push(current);
+      current = line;
+    } else {
+      current = candidate;
+    }
+  }
+
+  if (current) {
+    chunks.push(current);
+  }
+
+  if (!members.length) {
+    chunks.push(
+      `${header.join("\n")}هنوز آماری از اعضای گپ ثبت نشده است.`
+    );
+  }
+
+  return chunks;
+}
+
+
+async function showGroupMemberStats(
+  env,
+  chatId
+) {
+  const stats = await getChatStats(
+    env,
+    chatId
+  );
+
+  let chat = null;
+
+  try {
+    const result = await telegram(
+      "getChat",
+      env,
+      { chat_id: chatId }
+    );
+
+    chat = result?.result || null;
+  } catch (error) {
+    console.error(
+      "Get chat for member stats:",
+      error?.message || String(error)
+    );
+  }
+
+  const members =
+    await getGroupMemberStats(
+      env,
+      chatId
+    );
+
+  const texts =
+    buildGroupMemberStatsTexts(
+      stats,
+      members,
+      chat
+    );
+
+  for (const text of texts) {
+    try {
+      await telegram(
+        "sendMessage",
+        env,
+        {
+          chat_id: chatId,
+          text,
+          parse_mode: "HTML"
+        }
+      );
+    } catch (error) {
+      console.error(
+        "Send member stats:",
+        error?.message || String(error)
+      );
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
+/* =========================
    STATS COMMAND
 ========================= */
 
@@ -30188,10 +30456,30 @@ async function handleStatsCommand(
     "commands"
   );
 
-  await showChatStats(
-    env,
-    chatId
-  );
+  const wantsGroupStats =
+    parsed.args?.some(
+      arg =>
+        ["گپ", "گروه"].includes(
+          String(arg || "").trim()
+        )
+    ) ||
+    String(message?.text || "")
+      .trim()
+      .replace(/\u200c/g, " ")
+      .replace(/\s+/g, " ")
+      .toLowerCase() === "آمار گپ";
+
+  if (wantsGroupStats) {
+    await showGroupMemberStats(
+      env,
+      chatId
+    );
+  } else {
+    await showChatStats(
+      env,
+      chatId
+    );
+  }
 
   return true;
 }
@@ -30687,7 +30975,7 @@ async function routeMessage(
   ) {
 
     /*
-     * Keep group statistics updated.
+     * Keep group and per-user statistics updated.
      */
 
     try {
@@ -30696,6 +30984,17 @@ async function routeMessage(
         message.chat.id,
         "messages"
       );
+
+      if (
+        message.from &&
+        !message.from.is_bot
+      ) {
+        await updateUserActivity(
+          env,
+          message.chat.id,
+          message.from
+        );
+      }
     } catch (
       error
     ) {
