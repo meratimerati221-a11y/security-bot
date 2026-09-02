@@ -140,58 +140,6 @@ async function sendMessage(
 }
 
 
-/* ============================================================
-   BOT WAKE WORD / MENTION RESPONSE
-   Responds when a user says "ربات" or "روبات".
-============================================================ */
-async function handleBotWakeWord(
-  message,
-  env
-) {
-  const text =
-    typeof message?.text === "string"
-      ? message.text
-      : typeof message?.caption === "string"
-        ? message.caption
-        : "";
-
-  if (!text) {
-    return false;
-  }
-
-  const normalized =
-    text
-      .replace(/[\u200c\u200f]/g, "")
-      .toLowerCase();
-
-  if (
-    !/(^|[\s،,.!?؟؛:(){}\[\]"'«»])(?:ربات|روبات)(?=$|[\s،,.!?؟؛:(){}\[\]"'«»])/.test(
-      normalized
-    )
-  ) {
-    return false;
-  }
-
-  const replies = [
-    "🤖 حاضر و آماده برای خدمتم!",
-    "🤖 چه کمکی از دستم برمیاد؟",
-    "🤖 بگو ببینم، چه کاری برات انجام بدم؟"
-  ];
-
-  const reply = replies[
-    Math.floor(Math.random() * replies.length)
-  ];
-
-  await sendMessage(
-    env,
-    message.chat.id,
-    reply,
-    message?.message_id ? { reply_to_message_id: message.message_id } : {}
-  );
-
-  return true;
-}
-
 async function editMessage(
   env,
   chatId,
@@ -213,7 +161,7 @@ async function editMessage(
 }
 
 
-async function deleteMessage__legacy_1(
+async function deleteMessage(
   env,
   chatId,
   messageId
@@ -390,11 +338,6 @@ async function kvDelete(
   );
 }
 
-async function kvList(env, prefix, limit = 1000) {
-  const kv = getKV(env);
-  return await kv.list({ prefix, limit });
-}
-
 
 /* =========================
    SETTINGS
@@ -536,7 +479,7 @@ async function clearWarnings(
    ADMIN CHECK
 ========================= */
 
-async function getChatMember__legacy_1(
+async function getChatMember(
   env,
   chatId,
   userId
@@ -665,7 +608,7 @@ async function requireReplyUser(
    COMMAND NORMALIZER
 ========================= */
 
-function normalizeCommand__legacy_1(
+function normalizeCommand(
   text
 ) {
   if (!text) {
@@ -848,7 +791,7 @@ const LINK_REGEX =
   /(?:https?:\/\/|www\.|t\.me\/|telegram\.me\/|bit\.ly\/|tinyurl\.com\/)/i;
 
 
-function containsLink__legacy_1(
+function containsLink(
   text
 ) {
   return Boolean(
@@ -864,7 +807,7 @@ function containsLink__legacy_1(
    MODERATION
 ========================= */
 
-async function muteUser__legacy_1(
+async function muteUser(
   env,
   chatId,
   userId,
@@ -920,7 +863,7 @@ async function muteUser__legacy_1(
 }
 
 
-async function unmuteUser__legacy_1(
+async function unmuteUser(
   env,
   chatId,
   userId
@@ -971,7 +914,7 @@ async function unmuteUser__legacy_1(
 }
 
 
-async function banUser__legacy_1(
+async function banUser(
   env,
   chatId,
   userId
@@ -987,7 +930,7 @@ async function banUser__legacy_1(
 }
 
 
-async function unbanUser__legacy_1(
+async function unbanUser(
   env,
   chatId,
   userId
@@ -1012,7 +955,7 @@ async function unbanUser__legacy_1(
    MAIN PANEL TEXT
 ========================= */
 
-function mainPanelText__legacy_1() {
+function mainPanelText() {
   return [
     "🤖 <b>پنل مدیریت ربات</b>",
     "",
@@ -1034,7 +977,7 @@ function mainPanelText__legacy_1() {
    MAIN KEYBOARD
 ========================= */
 
-function mainKeyboard__legacy_1() {
+function mainKeyboard() {
   return {
     inline_keyboard: [
       [
@@ -1082,7 +1025,7 @@ function mainKeyboard__legacy_1() {
    BACK BUTTON
 ========================= */
 
-function backKeyboard__legacy_1() {
+function backKeyboard() {
   return {
     inline_keyboard: [
       [
@@ -1100,7 +1043,7 @@ function backKeyboard__legacy_1() {
    SECURITY PANEL
 ========================= */
 
-function securityPanelText__legacy_1(
+function securityPanelText(
   settings
 ) {
   const on =
@@ -1135,7 +1078,7 @@ function securityPanelText__legacy_1(
    SECURITY KEYBOARD
 ========================= */
 
-function securityKeyboard__legacy_1(
+function securityKeyboard(
   settings
 ) {
   return {
@@ -1264,7 +1207,7 @@ function securityKeyboard__legacy_1(
    MODERATION PANEL
 ========================= */
 
-function moderationPanelText__legacy_1() {
+function moderationPanelText() {
   return [
     "👮 <b>مدیریت کاربران</b>",
     "",
@@ -1276,7 +1219,7 @@ function moderationPanelText__legacy_1() {
 }
 
 
-function moderationPanelKeyboard__legacy_1() {
+function moderationPanelKeyboard() {
   return {
     inline_keyboard: [
       [
@@ -1320,7 +1263,7 @@ function moderationPanelKeyboard__legacy_1() {
    WARNING PANEL
 ========================= */
 
-function warningsPanelText__legacy_1(
+function warningsPanelText(
   settings
 ) {
   return [
@@ -1340,7 +1283,7 @@ function warningsPanelText__legacy_1(
 }
 
 
-function warningsPanelKeyboard__legacy_1(
+function warningsPanelKeyboard(
   settings
 ) {
   return {
@@ -1388,7 +1331,7 @@ function warningsPanelKeyboard__legacy_1(
    RULES PANEL
 ========================= */
 
-function rulesPanelText__legacy_1(
+function rulesPanelText(
   settings
 ) {
   return [
@@ -1402,7 +1345,7 @@ function rulesPanelText__legacy_1(
 }
 
 
-function rulesPanelKeyboard__legacy_1() {
+function rulesPanelKeyboard() {
   return {
     inline_keyboard: [
       [
@@ -1428,7 +1371,7 @@ function rulesPanelKeyboard__legacy_1() {
    SETTINGS PANEL
 ========================= */
 
-function settingsPanelText__legacy_1(
+function settingsPanelText(
   settings
 ) {
   return [
@@ -1454,7 +1397,7 @@ function settingsPanelText__legacy_1(
 }
 
 
-function settingsPanelKeyboard__legacy_1(
+function settingsPanelKeyboard(
   settings
 ) {
   return {
@@ -1499,7 +1442,7 @@ function settingsPanelKeyboard__legacy_1(
    STATS PANEL
 ========================= */
 
-function statsPanelText__legacy_1(
+function statsPanelText(
   stats
 ) {
   return [
@@ -1542,7 +1485,7 @@ function statsKey(
 }
 
 
-async function getStats__legacy_1(
+async function getStats(
   env,
   chatId
 ) {
@@ -1573,7 +1516,7 @@ async function saveStats(
 }
 
 
-async function incrementStat__legacy_1(
+async function incrementStat(
   env,
   chatId,
   field,
@@ -1879,7 +1822,7 @@ async function applyWarningAction(
    FORMAT WARN RESULT
 ========================= */
 
-function warningResultText__legacy_1(
+function warningResultText(
   user,
   result,
   action
@@ -2521,7 +2464,7 @@ function floodKey(
 }
 
 
-async function getFloodData__legacy_1(
+async function getFloodData(
   env,
   chatId,
   userId
@@ -2540,7 +2483,7 @@ async function getFloodData__legacy_1(
 }
 
 
-async function saveFloodData__legacy_1(
+async function saveFloodData(
   env,
   chatId,
   userId,
@@ -2564,7 +2507,7 @@ async function saveFloodData__legacy_1(
    FLOOD CHECK
 ========================= */
 
-async function checkFlood__legacy_1(
+async function checkFlood(
   env,
   chatId,
   userId
@@ -2904,7 +2847,7 @@ async function processMediaLocks(
    ANTI SPAM
 ========================= */
 
-async function processAntiSpam__legacy_1(
+async function processAntiSpam(
   env,
   message,
   settings
@@ -5232,15 +5175,13 @@ const COMMAND_ALIASES = {
   "/security":
     [
       "/security",
-      "/امنیت",
-    "امنیت"
+      "/امنیت"
     ],
 
   "/settings":
     [
       "/settings",
-      "/تنظیمات",
-    "تنظیمات"
+      "/تنظیمات"
     ],
 
   "/rules":
@@ -5372,7 +5313,7 @@ function safeLogObject(
    EVENT LOG
 ========================= */
 
-async function logEvent__legacy_1(
+async function logEvent(
   env,
   chatId,
   type,
@@ -5489,7 +5430,7 @@ async function clearEventLogs(
    STATISTIC INCREMENT
 ========================= */
 
-async function incrementStat__legacy_2(
+async function incrementStat(
   env,
   chatId,
   stat,
@@ -5607,7 +5548,7 @@ async function resetStats(
    MEMBER STATISTICS
 ========================= */
 
-async function updateMemberStats__legacy_1(
+async function updateMemberStats(
   env,
   chatId,
   userId,
@@ -5825,7 +5766,7 @@ async function logDeletedMessage(
    WARNING EVENT
 ========================= */
 
-async function logWarningEvent__legacy_1(
+async function logWarningEvent(
   env,
   chatId,
   userId,
@@ -5854,7 +5795,7 @@ async function logWarningEvent__legacy_1(
    MUTE EVENT
 ========================= */
 
-async function logMuteEvent__legacy_1(
+async function logMuteEvent(
   env,
   chatId,
   userId
@@ -6185,23 +6126,6 @@ async function handleLogCallback(
     return true;
   }
 
-  if (String(data || "").startsWith("um:")) {
-    const actorId = Number(callback?.from?.id || 0);
-    const chatId = Number(callback?.message?.chat?.id || 0);
-    if (!chatId || !await isAdmin(env, chatId, actorId)) {
-      await answerCallback(env, callback?.id, "⛔ فقط مدیران دسترسی دارند.");
-      return true;
-    }
-    const [, targetId, permission, state] = String(data).split(":");
-    if (!targetId || !/^\d+$/.test(targetId)) {
-      await answerCallback(env, callback?.id, "⚠️ پنل کاربر هدف ندارد. پنل را با ریپلای روی پیام کاربر باز کن.");
-      return true;
-    }
-    await setManagedUserPermission(env, chatId, Number(targetId), permission, state === "on");
-    await answerCallback(env, callback?.id, state === "on" ? "مجوز فعال شد." : "مجوز غیرفعال شد.");
-    return true;
-  }
-
   return false;
 }
 /* ============================================================
@@ -6213,7 +6137,7 @@ async function handleLogCallback(
    ADMIN CHECK
 ========================= */
 
-async function requireAdmin__legacy_1(
+async function requireAdmin(
   env,
   chatId,
   userId
@@ -6453,7 +6377,7 @@ async function kickUser(
    PROMOTE USER
 ========================= */
 
-async function promoteUser__legacy_1(
+async function promoteUser(
   env,
   chatId,
   userId
@@ -6470,9 +6394,9 @@ async function promoteUser__legacy_1(
     can_manage_topics: true
   };
 
-  await telegram("promoteChatMember",
-      env,
-      
+  await telegram(
+    env,
+    "promoteChatMember",
     {
       chat_id:
         chatId,
@@ -6501,7 +6425,7 @@ async function promoteUser__legacy_1(
    DEMOTE USER
 ========================= */
 
-async function demoteUser__legacy_1(
+async function demoteUser(
   env,
   chatId,
   userId
@@ -6519,9 +6443,9 @@ async function demoteUser__legacy_1(
     can_manage_topics: false
   };
 
-  await telegram("promoteChatMember",
-      env,
-      
+  await telegram(
+    env,
+    "promoteChatMember",
     {
       chat_id:
         chatId,
@@ -6569,9 +6493,9 @@ async function setGroupTitle(
     return false;
   }
 
-  await telegram("setChatTitle",
-      env,
-      
+  await telegram(
+    env,
+    "setChatTitle",
     {
       chat_id:
         chatId,
@@ -6613,9 +6537,9 @@ async function setGroupDescription(
         255
       );
 
-  await telegram("setChatDescription",
-      env,
-      
+  await telegram(
+    env,
+    "setChatDescription",
     {
       chat_id:
         chatId,
@@ -6639,15 +6563,15 @@ async function setGroupDescription(
    PIN MESSAGE
 ========================= */
 
-async function pinMessage__legacy_1(
+async function pinMessage(
   env,
   chatId,
   messageId,
   silent = false
 ) {
-  await telegram("pinChatMessage",
-      env,
-      
+  await telegram(
+    env,
+    "pinChatMessage",
     {
       chat_id:
         chatId,
@@ -6677,14 +6601,14 @@ async function pinMessage__legacy_1(
    UNPIN MESSAGE
 ========================= */
 
-async function unpinMessage__legacy_1(
+async function unpinMessage(
   env,
   chatId,
   messageId
 ) {
-  await telegram("unpinChatMessage",
-      env,
-      
+  await telegram(
+    env,
+    "unpinChatMessage",
     {
       chat_id:
         chatId,
@@ -6711,14 +6635,14 @@ async function unpinMessage__legacy_1(
    GET CHAT MEMBER
 ========================= */
 
-async function getChatMember__legacy_2(
+async function getChatMember(
   env,
   chatId,
   userId
 ) {
-  return await telegram("getChatMember",
-      env,
-      
+  return await telegram(
+    env,
+    "getChatMember",
     {
       chat_id:
         chatId,
@@ -6738,9 +6662,9 @@ async function getChatAdministrators(
   env,
   chatId
 ) {
-  return await telegram("getChatAdministrators",
-      env,
-      
+  return await telegram(
+    env,
+    "getChatAdministrators",
     {
       chat_id:
         chatId
@@ -6757,9 +6681,9 @@ async function getGroupInfo(
   env,
   chatId
 ) {
-  return await telegram("getChat",
-      env,
-      
+  return await telegram(
+    env,
+    "getChat",
     {
       chat_id:
         chatId
@@ -7320,7 +7244,7 @@ async function saveFloodState(
    FLOOD CHECK
 ========================= */
 
-async function checkFlood__legacy_2(
+async function checkFlood(
   env,
   chatId,
   userId
@@ -7448,7 +7372,7 @@ const SPAM_PATTERNS = [
    LINK DETECTOR
 ========================= */
 
-function containsLink__legacy_2(
+function containsLink(
   text
 ) {
   if (!text) {
@@ -8382,7 +8306,7 @@ async function processGoodbyeMember(
    GET RULES
 ========================= */
 
-async function getGroupRules__legacy_1(
+async function getGroupRules(
   env,
   chatId
 ) {
@@ -8403,7 +8327,7 @@ async function getGroupRules__legacy_1(
    SAVE RULES
 ========================= */
 
-async function saveGroupRules__legacy_1(
+async function saveGroupRules(
   env,
   chatId,
   rules
@@ -8444,7 +8368,7 @@ async function saveGroupRules__legacy_1(
    RULES MESSAGE
 ========================= */
 
-async function sendRules__legacy_1(
+async function sendRules(
   env,
   chatId
 ) {
@@ -8475,7 +8399,7 @@ async function sendRules__legacy_1(
    RULES CALLBACK
 ========================= */
 
-async function handleRulesCallback__legacy_1(
+async function handleRulesCallback(
   callback,
   env
 ) {
@@ -8575,7 +8499,7 @@ async function toggleGoodbye(
    RULES COMMAND
 ========================= */
 
-async function handleRulesCommand__legacy_1(
+async function handleRulesCommand(
   message,
   env
 ) {
@@ -8598,7 +8522,7 @@ async function handleRulesCommand__legacy_1(
    WELCOME SETTINGS TEXT
 ========================= */
 
-function welcomeSettingsText__legacy_1(
+function welcomeSettingsText(
   settings
 ) {
   return [
@@ -8622,7 +8546,7 @@ function welcomeSettingsText__legacy_1(
    WELCOME SETTINGS KEYBOARD
 ========================= */
 
-function welcomeSettingsKeyboard__legacy_1(
+function welcomeSettingsKeyboard(
   settings
 ) {
   return {
@@ -8673,7 +8597,7 @@ function welcomeSettingsKeyboard__legacy_1(
    WELCOME CALLBACK
 ========================= */
 
-async function handleWelcomeCallback__legacy_1(
+async function handleWelcomeCallback(
   callback,
   env
 ) {
@@ -8846,7 +8770,7 @@ async function processGroupEvents(
    WARNING STORAGE
 ========================= */
 
-async function getUserWarnings__legacy_1(
+async function getUserWarnings(
   env,
   chatId,
   userId
@@ -8884,7 +8808,7 @@ async function getUserWarnings__legacy_1(
    SAVE WARNINGS
 ========================= */
 
-async function saveUserWarnings__legacy_1(
+async function saveUserWarnings(
   env,
   chatId,
   userId,
@@ -8902,7 +8826,7 @@ async function saveUserWarnings__legacy_1(
    ADD WARNING
 ========================= */
 
-async function addWarning__legacy_1(
+async function addWarning(
   env,
   chatId,
   userId,
@@ -9044,7 +8968,7 @@ async function removeWarning(
    RESET WARNINGS
 ========================= */
 
-async function resetWarnings__legacy_1(
+async function resetWarnings(
   env,
   chatId,
   userId
@@ -9177,9 +9101,9 @@ async function restrictUser(
     return false;
   }
 
-  await telegram("restrictChatMember",
-      env,
-      
+  await telegram(
+    env,
+    "restrictChatMember",
     {
       chat_id:
         chatId,
@@ -9236,9 +9160,9 @@ async function unrestrictUser(
   chatId,
   userId
 ) {
-  await telegram("restrictChatMember",
-      env,
-      
+  await telegram(
+    env,
+    "restrictChatMember",
     {
       chat_id:
         chatId,
@@ -9282,7 +9206,7 @@ async function unrestrictUser(
    TEMPORARY MUTE
 ========================= */
 
-async function muteUser__legacy_2(
+async function muteUser(
   env,
   chatId,
   userId,
@@ -9982,7 +9906,7 @@ function adminPanelText() {
    SECURITY PANEL
 ========================= */
 
-async function showSecurityPanel__legacy_1(
+async function showSecurityPanel(
   env,
   chatId
 ) {
@@ -10298,7 +10222,7 @@ function userManagementText() {
 }
 
 
-function userManagementKeyboard(targetId = "") {
+function userManagementKeyboard() {
   return {
     inline_keyboard: [
 
@@ -10423,7 +10347,7 @@ function statsKeyboard() {
    SETTINGS PANEL
 ========================= */
 
-async function showSettingsPanel__legacy_1(
+async function showSettingsPanel(
   env,
   chatId
 ) {
@@ -10517,7 +10441,7 @@ function settingsKeyboard() {
    ADMIN CALLBACK ROUTER
 ========================= */
 
-async function handleAdminPanelCallback__legacy_1(
+async function handleAdminPanelCallback(
   callback,
   env
 ) {
@@ -10913,8 +10837,6 @@ async function handleAdminCommand(
     "/panel",
     "/مدیریت",
     "/پنل",
-    "مدیریت",
-    "پنل",
     "/پنل_مدیریت"
 
   ];
@@ -10985,137 +10907,83 @@ function normalizeCommandText(text) {
 
 const BOT_COMMANDS = {
 
-  start: [
-    "/start",
-    "start",
-    "شروع"
-  ],
-
   help: [
     "/help",
     "/راهنما",
-    "/کمک",
-    "راهنما",
-    "کمک"
+    "/کمک"
   ],
 
   id: [
     "/id",
     "/شناسه",
-    "/آیدی",
-    "شناسه",
-    "آیدی"
+    "/آیدی"
   ],
 
   admin: [
     "/admin",
     "/panel",
     "/مدیریت",
-    "/پنل",
-    "پنل",
-    "مدیریت"
+    "/پنل"
   ],
 
   rules: [
     "/rules",
     "/قوانین",
-    "/قانون",
-    "قوانین",
-    "قانون"
+    "/قانون"
   ],
 
   warnings: [
     "/warnings",
     "/اخطارها",
-    "/هشدارها",
-    "اخطارها",
-    "هشدارها"
+    "/هشدارها"
   ],
 
   warningHistory: [
     "/warnhistory",
     "/سابقه_اخطار",
-    "/سابقه_هشدار",
-    "سابقه_اخطار",
-    "سابقه_هشدار",
-    "سابقه اخطار",
-    "سابقه هشدار"
+    "/سابقه_هشدار"
   ],
 
   warn: [
     "/warn",
     "/اخطار",
-    "/هشدار",
-    "اخطار",
-    "هشدار"
+    "/هشدار"
   ],
 
   mute: [
     "/mute",
     "/سکوت",
-    "/محدود",
-    "سکوت",
-    "محدود"
+    "/محدود"
   ],
 
   unmute: [
     "/unmute",
     "/رفع_سکوت",
-    "/رفع_محدودیت",
-    "رفع_سکوت",
-    "رفع_محدودیت",
-    "رفع سکوت",
-    "رفع محدودیت"
+    "/رفع_محدودیت"
   ],
 
   ban: [
     "/ban",
     "/بن",
-    "/مسدود",
-    "بن",
-    "مسدود"
+    "/مسدود"
   ],
 
   unban: [
     "/unban",
     "/رفع_بن",
-    "/رفع_مسدودیت",
-    "رفع_بن",
-    "رفع_مسدودیت",
-    "رفع بن",
-    "رفع مسدودیت"
+    "/رفع_مسدودیت"
   ],
 
   stats: [
     "/stats",
     "/statistics",
-    "/آمار",
-    "آمار",
-    "آمار گپ",
-    "/آمار گپ",
-    "آمارم",
-    "/آمارم"
+    "/آمار"
   ],
 
   settings: [
     "/settings",
     "/config",
-    "/تنظیمات",
-    "تنظیمات"
-  ],
-
-  security: [
-    "/security",
-    "/امنیت",
-    "امنیت"
-  ],
-
-  userManagement: [
-    "/usermanagement",
-    "/مدیریت_کاربر",
-    "/مدیریت_کاربران",
-    "مدیریت کاربر",
-    "مدیریت کاربران"
+    "/تنظیمات"
   ]
 
 };
@@ -11177,31 +11045,32 @@ function parseBotCommand(
       text
     );
 
-  if (!normalized) {
+  if (
+    !normalized.startsWith(
+      "/"
+    )
+  ) {
     return null;
   }
 
-  // First try the complete message so Persian multi-word commands
-  // such as "آمار گپ" and "رفع سکوت" work without a slash.
-  const fullCommand =
-    COMMAND_MAP.get(normalized);
-
-  if (fullCommand) {
-    return {
-      command: fullCommand,
-      token: normalized,
-      args: []
-    };
-  }
-
   const parts =
-    normalized.split(/\s+/);
+    normalized.split(
+      /\s+/
+    );
 
   const commandToken =
     parts.shift();
 
+  /*
+   * Telegram may send:
+   *
+   * /help@BotUsername
+   */
+
   const commandWithoutBot =
-    commandToken.split("@")[0];
+    commandToken.split(
+      "@"
+    )[0];
 
   const command =
     COMMAND_MAP.get(
@@ -11214,8 +11083,10 @@ function parseBotCommand(
 
   return {
     command,
-    token: commandWithoutBot,
-    args: parts
+    token:
+      commandWithoutBot,
+    args:
+      parts
   };
 }
 
@@ -11301,7 +11172,7 @@ async function requireAdmin(
    MUTE COMMAND
 ========================= */
 
-async function handleMuteCommand__legacy_1(
+async function handleMuteCommand(
   message,
   env,
   parsed
@@ -11403,7 +11274,7 @@ async function handleMuteCommand__legacy_1(
    UNMUTE COMMAND
 ========================= */
 
-async function handleUnmuteCommand__legacy_1(
+async function handleUnmuteCommand(
   message,
   env,
   parsed
@@ -11470,7 +11341,7 @@ async function handleUnmuteCommand__legacy_1(
    BAN COMMAND
 ========================= */
 
-async function handleBanCommand__legacy_1(
+async function handleBanCommand(
   message,
   env,
   parsed
@@ -11576,7 +11447,7 @@ async function handleBanCommand__legacy_1(
    UNBAN COMMAND
 ========================= */
 
-async function handleUnbanCommand__legacy_1(
+async function handleUnbanCommand(
   message,
   env,
   parsed
@@ -11655,7 +11526,7 @@ async function handleUnbanCommand__legacy_1(
    STATS COMMAND
 ========================= */
 
-async function handleStatsCommand__legacy_1(
+async function handleStatsCommand(
   message,
   env,
   parsed
@@ -11749,291 +11620,6 @@ async function handleSettingsCommand(
 
 
 /* =========================
-   GENERIC HELPERS
-========================= */
-
-function parseDuration(value) {
-  const text = String(value || "").trim().toLowerCase();
-  if (!text) return 300;
-  const match = text.match(/^(\d+(?:\.\d+)?)(s|m|h|d)?$/);
-  if (!match) return 300;
-  const amount = Number(match[1]);
-  const unit = match[2] || "s";
-  const multiplier = unit === "m" ? 60 : unit === "h" ? 3600 : unit === "d" ? 86400 : 1;
-  return Math.max(1, Math.min(86400, Math.round(amount * multiplier)));
-}
-
-async function getBotId(env) {
-  try {
-    const response = await telegram("getMe",
-      env,
-       {});
-    return Number(response?.id || response?.result?.id || 0);
-  } catch (error) {
-    console.error("getBotId:", getSafeErrorMessage(error));
-    return 0;
-  }
-}
-
-
-/* =========================
-   PRIVATE / START HANDLER
-========================= */
-
-async function handleStartCommand(
-  message,
-  env
-) {
-  const parsed =
-    parseBotCommand(
-      message?.text
-    );
-
-  if (
-    !parsed ||
-    parsed.command !== "start"
-  ) {
-    return false;
-  }
-
-  await sendMessage(
-    env,
-    message.chat.id,
-    [
-      "🤖 <b>ربات مدیریت گروه</b>",
-      "",
-      "سلام 🌹",
-      "ربات با موفقیت فعال است.",
-      "",
-      "برای مشاهده راهنما /help را بفرستید.",
-      "برای مشاهده شناسه /id را بفرستید."
-    ].join("\n")
-  );
-
-  return true;
-}
-
-
-/* =========================
-   USER MANAGEMENT
-========================= */
-
-
-
-function normalizeUserTargetText(value) {
-  return String(value || "")
-    .replace(/\u200c/g, " ")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-}
-
-async function resolveManagedUser(env, chatId, message, targetText = "") {
-  const replied = message?.reply_to_message?.from;
-  if (replied?.id) return replied;
-
-  const raw = String(targetText || "").trim();
-  if (!raw) return null;
-
-  const idMatch = raw.match(/^<?(\d{4,})>?$/);
-  if (idMatch) {
-    const id = Number(idMatch[1]);
-    const profile = await kvGet(env, `user:${chatId}:${id}`, null);
-    return profile || { id, first_name: id };
-  }
-
-  const username = raw.replace(/^@/, "").toLowerCase();
-  const page = await kvList(env, `user:${chatId}:`, 1000);
-  let exact = null;
-  let nameMatch = null;
-
-  for (const item of page?.keys || []) {
-    const profile = await kvGet(env, item.name, null);
-    if (!profile || profile.isBot) continue;
-    const pUsername = String(profile.username || "").toLowerCase();
-    const display = normalizeUserTargetText(
-      `${profile.firstName || ""} ${profile.lastName || ""}`
-    );
-    if (pUsername && pUsername === username) exact = profile;
-    if (display && display === normalizeUserTargetText(raw)) nameMatch = profile;
-  }
-  return exact || nameMatch || null;
-}
-
-function userPermissionFields() {
-  return {
-    messages: "can_send_messages",
-    audios: "can_send_audios",
-    documents: "can_send_documents",
-    photos: "can_send_photos",
-    videos: "can_send_videos",
-    video_notes: "can_send_video_notes",
-    voice_notes: "can_send_voice_notes",
-    polls: "can_send_polls",
-    other: "can_send_other_messages",
-    animation: "can_send_other_messages"
-  };
-}
-
-async function setManagedUserPermission(env, chatId, userId, permission, allowed) {
-  if (isProtectedUser(userId)) return false;
-  const field = userPermissionFields()[permission];
-  if (!field) return false;
-
-  const current = await telegram("getChatMember", env, {
-    chat_id: chatId,
-    user_id: userId
-  });
-  const currentPerm = current?.result?.can_send_messages !== undefined
-    ? current.result
-    : {};
-
-  const permissions = {
-    can_send_messages: currentPerm.can_send_messages !== false,
-    can_send_audios: currentPerm.can_send_audios !== false,
-    can_send_documents: currentPerm.can_send_documents !== false,
-    can_send_photos: currentPerm.can_send_photos !== false,
-    can_send_videos: currentPerm.can_send_videos !== false,
-    can_send_video_notes: currentPerm.can_send_video_notes !== false,
-    can_send_voice_notes: currentPerm.can_send_voice_notes !== false,
-    can_send_polls: currentPerm.can_send_polls !== false,
-    can_send_other_messages: currentPerm.can_send_other_messages !== false,
-    can_add_web_page_previews: currentPerm.can_add_web_page_previews !== false,
-    can_invite_users: currentPerm.can_invite_users !== false
-  };
-
-  permissions[field] = Boolean(allowed);
-  await telegram("restrictChatMember", env, {
-    chat_id: chatId,
-    user_id: userId,
-    permissions
-  });
-  return true;
-}
-
-async function setManagedUserRateLimit(env, chatId, userId, seconds) {
-  const key = `user-rate:${chatId}:${userId}`;
-  if (!seconds) {
-    await kvDelete(env, key);
-    return true;
-  }
-  await kvPut(env, key, {
-    seconds: Math.max(1, Math.min(Number(seconds), 86400)),
-    updatedAt: Date.now()
-  });
-  return true;
-}
-
-async function enforceManagedUserRateLimit(message, env) {
-  const chatId = message?.chat?.id;
-  const userId = Number(message?.from?.id || 0);
-  if (!chatId || !userId) return false;
-  if (await isAdmin(env, chatId, userId)) return false;
-
-  const rule = await kvGet(env, `user-rate:${chatId}:${userId}`, null);
-  if (!rule?.seconds) return false;
-
-  const key = `user-rate-last:${chatId}:${userId}`;
-  const last = await kvGet(env, key, 0);
-  const now = Date.now();
-  if (now - Number(last || 0) < Number(rule.seconds) * 1000) {
-    try { await deleteUserMessage(env, message); } catch (_) {}
-    return true;
-  }
-  await kvPut(env, key, now);
-  return false;
-}
-
-async function handleUserManagementCommand(message, env) {
-  const parsed = parseBotCommand(message?.text);
-  if (!parsed || parsed.command !== "userManagement") return false;
-  const chat = message?.chat;
-  if (!chat || !["group", "supergroup"].includes(chat.type)) {
-    await sendMessage(env, chat?.id, "⚠️ مدیریت کاربران فقط داخل گروه قابل استفاده است.");
-    return true;
-  }
-  const actor = Number(message.from?.id || 0);
-  if (!await isAdmin(env, chat.id, actor)) {
-    await sendMessage(env, chat.id, "⛔ فقط مدیران می‌توانند کاربران را مدیریت کنند.");
-    return true;
-  }
-  const panelTarget = message.reply_to_message?.from?.id || "";
-  await sendMessage(env, chat.id, [
-    "👥 <b>مدیریت کاربران</b>", "",
-    "برای مدیریت کاربر، روی پیام او ریپلای کن یا از شناسه/نام کاربری استفاده کن.",
-    "مثال‌ها:",
-    "<code>محدودیت کاربر 300</code> — محدودیت پیام هر ۵ دقیقه",
-    "<code>اجازه پیام</code> — با ریپلای",
-    "<code>ممنوع پیام</code> — با ریپلای",
-    "<code>اجازه گیف</code> / <code>ممنوع گیف</code>",
-    "<code>اجازه فیلم</code> / <code>ممنوع فیلم</code>",
-    "<code>اجازه عکس</code> / <code>ممنوع عکس</code>",
-    "<code>اجازه فایل</code> / <code>ممنوع فایل</code>",
-    "<code>اجازه ویس</code> / <code>ممنوع ویس</code>"
-  ].join("\n"), { reply_markup: userManagementKeyboard() });
-  return true;
-}
-
-async function handleUserManagementNaturalCommand(message, env) {
-  const text = normalizeUserTargetText(message?.text);
-  const patterns = [
-    ["اجازه پیام", "messages", true], ["ممنوع پیام", "messages", false],
-    ["اجازه گیف", "animation", true], ["ممنوع گیف", "animation", false],
-    ["اجازه فیلم", "videos", true], ["ممنوع فیلم", "videos", false],
-    ["اجازه ویدیو", "videos", true], ["ممنوع ویدیو", "videos", false],
-    ["اجازه عکس", "photos", true], ["ممنوع عکس", "photos", false],
-    ["اجازه فایل", "documents", true], ["ممنوع فایل", "documents", false],
-    ["اجازه ویس", "voice_notes", true], ["ممنوع ویس", "voice_notes", false],
-    ["اجازه آهنگ", "audios", true], ["ممنوع آهنگ", "audios", false],
-    ["اجازه نظرسنجی", "polls", true], ["ممنوع نظرسنجی", "polls", false]
-  ];
-  const found = patterns.find(([prefix]) => text === prefix || text.startsWith(prefix + " "));
-  const rateMatch = text.match(/^(?:محدودیت پیام|محدودیت کاربر)\s+(.+)$/);
-  const clearRate = /^(?:رفع محدودیت پیام|رفع محدودیت کاربر)$/.test(text);
-  if (!found && !rateMatch && !clearRate) return false;
-
-  const chat = message?.chat;
-  if (!chat || !["group", "supergroup"].includes(chat.type)) return false;
-  const actor = Number(message.from?.id || 0);
-  if (!await isAdmin(env, chat.id, actor)) {
-    await sendMessage(env, chat.id, "⛔ فقط مدیران می‌توانند این تنظیم را تغییر دهند.");
-    return true;
-  }
-
-  let targetText = "";
-  if (message.reply_to_message?.from) targetText = "";
-  else if (found) targetText = text.slice(found[0].length).trim();
-  else if (rateMatch) targetText = rateMatch[1].trim().replace(/\s+(?:دقیقه|دقیقه‌ای|ثانیه)$/i, "").trim();
-
-  const target = await resolveManagedUser(env, chat.id, message, targetText);
-  if (!target?.id) {
-    await sendMessage(env, chat.id, "⚠️ کاربر پیدا نشد. روی پیامش ریپلای کن یا آیدی/نام کاربری دقیق او را بنویس.");
-    return true;
-  }
-  const userId = Number(target.id);
-
-  if (clearRate) {
-    await setManagedUserRateLimit(env, chat.id, userId, 0);
-    await sendMessage(env, chat.id, "✅ محدودیت زمانی پیام کاربر برداشته شد.");
-    return true;
-  }
-  if (rateMatch) {
-    const amount = Number((rateMatch[1].match(/\d+(?:\.\d+)?/) || ["0"])[0]);
-    const seconds = /دقیقه/.test(rateMatch[1]) ? amount * 60 : amount;
-    await setManagedUserRateLimit(env, chat.id, userId, seconds);
-    await sendMessage(env, chat.id, `⏱️ محدودیت ارسال پیام برای <b>${escapeHTML(displayName(target))}</b> تنظیم شد: هر <b>${seconds}</b> ثانیه.`);
-    return true;
-  }
-
-  const [, permission, allowed] = found;
-  await setManagedUserPermission(env, chat.id, userId, permission, allowed);
-  const state = allowed ? "مجاز" : "ممنوع";
-  await sendMessage(env, chat.id, `✅ ارسال ${escapeHTML(found[0].replace(/^اجازه |^ممنوع /, ""))} برای <b>${escapeHTML(displayName(target))}</b> ${state} شد.`);
-  return true;
-}
-
-
-/* =========================
    COMMAND ROUTER
 ========================= */
 
@@ -12049,32 +11635,6 @@ async function routeBotCommand(
 
   if (!parsed) {
     return false;
-  }
-
-
-  /* START */
-
-  if (
-    parsed.command ===
-    "start"
-  ) {
-    return await handleStartCommand(
-      message,
-      env
-    );
-  }
-
-
-  /* USER MANAGEMENT */
-
-  if (
-    parsed.command ===
-    "userManagement"
-  ) {
-    return await handleUserManagementCommand(
-      message,
-      env
-    );
   }
 
 
@@ -12158,24 +11718,6 @@ async function routeBotCommand(
       `🆔 شناسه شما:\n<code>${userId}</code>`
     );
 
-    return true;
-  }
-
-
-  /* SECURITY */
-
-  if (
-    parsed.command ===
-    "security"
-  ) {
-    if (!(await requireAdmin(message, env))) {
-      await sendMessage(env, message.chat.id, "⛔ فقط مدیران دسترسی دارند.");
-      return true;
-    }
-    const settings = await getSettings(env, message.chat.id);
-    await sendMessage(env, message.chat.id, securityPanelText(settings), {
-      reply_markup: securityKeyboard(settings)
-    });
     return true;
   }
 
@@ -12406,9 +11948,9 @@ async function deleteMessage(
   }
 
   try {
-    await telegram("deleteMessage",
+    await telegram(
       env,
-      
+      "deleteMessage",
       {
         chat_id: chatId,
         message_id: messageId
@@ -12452,9 +11994,9 @@ async function banUser(
   }
 
   try {
-    await telegram("banChatMember",
+    await telegram(
       env,
-      
+      "banChatMember",
       {
         chat_id: chatId,
         user_id: userId,
@@ -12501,9 +12043,9 @@ async function unbanUser(
   }
 
   try {
-    await telegram("unbanChatMember",
+    await telegram(
       env,
-      
+      "unbanChatMember",
       {
         chat_id: chatId,
         user_id: userId,
@@ -12566,9 +12108,9 @@ async function promoteUser(
   };
 
   try {
-    await telegram("promoteChatMember",
+    await telegram(
       env,
-      
+      "promoteChatMember",
       {
         chat_id: chatId,
         user_id: userId,
@@ -12616,9 +12158,9 @@ async function demoteUser(
   }
 
   try {
-    await telegram("promoteChatMember",
+    await telegram(
       env,
-      
+      "promoteChatMember",
       {
         chat_id: chatId,
         user_id: userId,
@@ -12677,9 +12219,9 @@ async function getChatMember(
 
   try {
     const result =
-      await telegram("getChatMember",
-      env,
-      
+      await telegram(
+        env,
+        "getChatMember",
         {
           chat_id: chatId,
           user_id: userId
@@ -12806,7 +12348,7 @@ async function canModerate(
    GROUP RULES
 ========================= */
 
-async function getGroupRules__legacy_2(
+async function getGroupRules(
   env,
   chatId
 ) {
@@ -12823,7 +12365,7 @@ async function getGroupRules__legacy_2(
 }
 
 
-async function saveGroupRules__legacy_2(
+async function saveGroupRules(
   env,
   chatId,
   rules
@@ -12853,7 +12395,7 @@ async function saveGroupRules__legacy_2(
    RULES COMMAND
 ========================= */
 
-async function handleRulesCommand__legacy_2(
+async function handleRulesCommand(
   message,
   env
 ) {
@@ -12896,7 +12438,7 @@ async function handleRulesCommand__legacy_2(
    SET RULES
 ========================= */
 
-async function handleSetRulesCommand__legacy_1(
+async function handleSetRulesCommand(
   message,
   env
 ) {
@@ -12964,9 +12506,9 @@ async function pinMessage(
   disableNotification = false
 ) {
   try {
-    await telegram("pinChatMessage",
+    await telegram(
       env,
-      
+      "pinChatMessage",
       {
         chat_id: chatId,
         message_id: messageId,
@@ -13007,9 +12549,9 @@ async function unpinMessage(
   messageId
 ) {
   try {
-    await telegram("unpinChatMessage",
+    await telegram(
       env,
-      
+      "unpinChatMessage",
       {
         chat_id: chatId,
         message_id: messageId
@@ -13038,9 +12580,9 @@ async function getChatInfo(
   chatId
 ) {
   try {
-    return await telegram("getChat",
+    return await telegram(
       env,
-      
+      "getChat",
       {
         chat_id: chatId
       }
@@ -13066,9 +12608,9 @@ async function getChatMemberCount(
 ) {
   try {
     const count =
-      await telegram("getChatMemberCount",
-      env,
-      
+      await telegram(
+        env,
+        "getChatMemberCount",
         {
           chat_id: chatId
         }
@@ -13201,7 +12743,7 @@ function welcomeSettingsKeyboard(settings) {
    WELCOME MESSAGE
 ========================= */
 
-async function sendWelcomeMessage__legacy_1(
+async function sendWelcomeMessage(
   message,
   env
 ) {
@@ -13275,7 +12817,7 @@ async function sendWelcomeMessage__legacy_1(
    GOODBYE MESSAGE
 ========================= */
 
-async function sendGoodbyeMessage__legacy_1(
+async function sendGoodbyeMessage(
   message,
   env
 ) {
@@ -13427,13 +12969,11 @@ async function registerUser(
     data
   );
 
-  if (!old) {
-    await incrementStat(
-      env,
-      chatId,
-      "users"
-    );
-  }
+  await incrementStat(
+    env,
+    chatId,
+    "users"
+  );
 
   return true;
 }
@@ -13446,8 +12986,7 @@ async function registerUser(
 async function updateUserActivity(
   env,
   chatId,
-  user,
-  message = null
+  user
 ) {
   if (
     !chatId ||
@@ -13479,29 +13018,6 @@ async function updateUserActivity(
     Number(
       data.messages || 0
     ) + 1;
-
-  const typeCounters = [
-    ["voice", hasVoice(message), "voiceMessages"],
-    ["audio", hasAudio(message), "audioMessages"],
-    ["photo", hasPhoto(message), "photoMessages"],
-    ["video", hasVideo(message), "videoMessages"],
-    ["document", hasDocument(message), "documentMessages"],
-    ["animation", hasAnimation(message), "animationMessages"],
-    ["forward", isForwarded(message), "forwardedMessages"],
-    ["poll", hasPoll(message), "pollMessages"],
-    ["location", hasLocation(message), "locationMessages"],
-    ["contact", hasContact(message), "contactMessages"]
-  ];
-
-  for (const [, present, field] of typeCounters) {
-    if (present) {
-      data[field] = Number(data[field] || 0) + 1;
-    }
-  }
-
-  if (message?.new_chat_members?.length) {
-    data.joins = Number(data.joins || 0) + message.new_chat_members.length;
-  }
 
   data.lastSeen =
     Date.now();
@@ -13572,7 +13088,7 @@ async function updateMemberStats(
    CHAT STATISTICS
 ========================= */
 
-async function getChatStats__legacy_1(
+async function getChatStats(
   env,
   chatId
 ) {
@@ -13595,7 +13111,7 @@ async function getChatStats__legacy_1(
    INCREMENT STAT
 ========================= */
 
-async function incrementStat__legacy_3(
+async function incrementStat(
   env,
   chatId,
   field
@@ -15626,7 +15142,7 @@ function buildSecurityPanelKeyboard(
    SHOW SECURITY PANEL
 ========================= */
 
-async function showSecurityPanel__legacy_2(
+async function showSecurityPanel(
   env,
   chatId
 ) {
@@ -16222,9 +15738,9 @@ async function muteUser(
     ) + duration;
 
   try {
-    await telegram("restrictChatMember",
+    await telegram(
       env,
-      
+      "restrictChatMember",
       {
         chat_id:
           chatId,
@@ -16323,9 +15839,9 @@ async function unmuteUser(
   }
 
   try {
-    await telegram("restrictChatMember",
+    await telegram(
       env,
-      
+      "restrictChatMember",
       {
         chat_id:
           chatId,
@@ -17383,7 +16899,7 @@ async function saveGroupRules(
    RULES COMMAND
 ========================= */
 
-async function handleRulesCommand__legacy_3(
+async function handleRulesCommand(
   message,
   env
 ) {
@@ -17434,7 +16950,7 @@ async function handleRulesCommand__legacy_3(
    SET RULES COMMAND
 ========================= */
 
-async function handleSetRulesCommand__legacy_2(
+async function handleSetRulesCommand(
   message,
   env
 ) {
@@ -17528,9 +17044,9 @@ async function getGroupInformation(
   chatId
 ) {
   try {
-    return await telegram("getChat",
+    return await telegram(
       env,
-      
+      "getChat",
       {
         chat_id:
           chatId
@@ -17571,9 +17087,9 @@ async function buildGroupInfoText(
 
   try {
     memberCount =
-      await telegram("getChatMemberCount",
-      env,
-      
+      await telegram(
+        env,
+        "getChatMemberCount",
         {
           chat_id:
             chatId
@@ -17751,9 +17267,9 @@ async function deleteBotMessage(
   }
 
   try {
-    await telegram("deleteMessage",
+    await telegram(
       env,
-      
+      "deleteMessage",
       {
         chat_id:
           chatId,
@@ -17794,9 +17310,9 @@ async function pinGroupMessage(
   }
 
   try {
-    await telegram("pinChatMessage",
+    await telegram(
       env,
-      
+      "pinChatMessage",
       {
         chat_id:
           chatId,
@@ -17846,9 +17362,9 @@ async function unpinGroupMessage(
         messageId;
     }
 
-    await telegram("unpinChatMessage",
+    await telegram(
       env,
-      
+      "unpinChatMessage",
       payload
     );
 
@@ -18428,7 +17944,7 @@ function getDefaultAntiSpamConfig() {
    GET ANTI-SPAM CONFIG
 ========================= */
 
-async function getAntiSpamConfig__legacy_1(
+async function getAntiSpamConfig(
   env,
   chatId
 ) {
@@ -18450,7 +17966,7 @@ async function getAntiSpamConfig__legacy_1(
    SAVE ANTI-SPAM CONFIG
 ========================= */
 
-async function saveAntiSpamConfig__legacy_1(
+async function saveAntiSpamConfig(
   env,
   chatId,
   config
@@ -18729,7 +18245,7 @@ function isDuplicateSpam(
    NORMALIZE SPAM TEXT
 ========================= */
 
-function normalizeSpamText__legacy_1(
+function normalizeSpamText(
   text
 ) {
   return String(
@@ -19111,7 +18627,7 @@ async function processAntiSpam(
    ANTI-SPAM COMMAND
 ========================= */
 
-async function handleAntiSpamCommand__legacy_1(
+async function handleAntiSpamCommand(
   message,
   env
 ) {
@@ -19293,7 +18809,7 @@ function getDefaultLinkConfig() {
    GET LINK CONFIG
 ========================= */
 
-async function getLinkConfig__legacy_1(
+async function getLinkConfig(
   env,
   chatId
 ) {
@@ -19315,7 +18831,7 @@ async function getLinkConfig__legacy_1(
    SAVE LINK CONFIG
 ========================= */
 
-async function saveLinkConfig__legacy_1(
+async function saveLinkConfig(
   env,
   chatId,
   config
@@ -19381,7 +18897,7 @@ function extractURLs(
    DOMAIN EXTRACTION
 ========================= */
 
-function extractDomain__legacy_1(
+function extractDomain(
   url
 ) {
   try {
@@ -20379,9 +19895,9 @@ async function getGroupAdminIds(
 ) {
   try {
     const admins =
-      await telegram("getChatAdministrators",
-      env,
-      
+      await telegram(
+        env,
+        "getChatAdministrators",
         {
           chat_id:
             chatId
@@ -20887,7 +20403,7 @@ async function routeReportSystem(
    ADMIN PANEL KEYBOARD
 ========================= */
 
-function buildAdminPanelKeyboard__legacy_1() {
+function buildAdminPanelKeyboard() {
   return {
     inline_keyboard: [
       [
@@ -21045,9 +20561,9 @@ async function sendAdminPanel(
   );
 
   try {
-    await telegram("sendMessage",
+    await telegram(
       env,
-      
+      "sendMessage",
       {
         chat_id:
           chatId,
@@ -21079,7 +20595,7 @@ async function sendAdminPanel(
    PANEL COMMAND
 ========================= */
 
-async function handleAdminPanelCommand__legacy_1(
+async function handleAdminPanelCommand(
   message,
   env
 ) {
@@ -21145,9 +20661,9 @@ async function showSecurityPanel(
     "\n"
   );
 
-  return await telegram("editMessageText",
-      env,
-      
+  return await telegram(
+    env,
+    "editMessageText",
     {
       chat_id:
         chatId,
@@ -21184,9 +20700,9 @@ async function showSettingsPanel(
     "\n"
   );
 
-  return await telegram("editMessageText",
-      env,
-      
+  return await telegram(
+    env,
+    "editMessageText",
     {
       chat_id:
         chatId,
@@ -21261,9 +20777,9 @@ async function showAntispamPanel(
     ]
   };
 
-  return await telegram("editMessageText",
-      env,
-      
+  return await telegram(
+    env,
+    "editMessageText",
     {
       chat_id:
         chatId,
@@ -21348,9 +20864,9 @@ async function showLinkPanel(
     ]
   };
 
-  return await telegram("editMessageText",
-      env,
-      
+  return await telegram(
+    env,
+    "editMessageText",
     {
       chat_id:
         chatId,
@@ -21423,9 +20939,9 @@ async function showReportPanel(
     ]
   };
 
-  return await telegram("editMessageText",
-      env,
-      
+  return await telegram(
+    env,
+    "editMessageText",
     {
       chat_id:
         chatId,
@@ -21449,7 +20965,7 @@ async function showReportPanel(
    MAIN PANEL CALLBACK
 ========================= */
 
-async function handleAdminPanelCallback__legacy_2(
+async function handleAdminPanelCallback(
   callback,
   env
 ) {
@@ -21506,9 +21022,9 @@ async function handleAdminPanelCallback__legacy_2(
     )
   ) {
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -21534,9 +21050,9 @@ async function handleAdminPanelCallback__legacy_2(
     data ===
     "panel:main"
   ) {
-    await telegram("editMessageText",
+    await telegram(
       env,
-      
+      "editMessageText",
       {
         chat_id:
           chatId,
@@ -21735,9 +21251,9 @@ async function handleAdminPanelCallback__legacy_2(
     data ===
     "panel:refresh"
   ) {
-    await telegram("editMessageText",
+    await telegram(
       env,
-      
+      "editMessageText",
       {
         chat_id:
           chatId,
@@ -21771,9 +21287,9 @@ async function handleAdminPanelCallback__legacy_2(
   ========================= */
 
   try {
-    await telegram("answerCallbackQuery",
+    await telegram(
       env,
-      
+      "answerCallbackQuery",
       {
         callback_query_id:
           callback.id
@@ -22200,9 +21716,9 @@ async function getTelegramMemberInfo(
   userId
 ) {
   try {
-    return await telegram("getChatMember",
+    return await telegram(
       env,
-      
+      "getChatMember",
       {
         chat_id:
           chatId,
@@ -23156,9 +22672,9 @@ async function sendAdvancedPoll(
 
   try {
     const result =
-      await telegram("sendMessage",
-      env,
-      
+      await telegram(
+        env,
+        "sendMessage",
         {
           chat_id:
             poll.chatId,
@@ -23443,9 +22959,9 @@ async function updatePollMessage(
   }
 
   try {
-    await telegram("editMessageText",
+    await telegram(
       env,
-      
+      "editMessageText",
       {
         chat_id:
           poll.chatId,
@@ -23774,9 +23290,9 @@ async function handlePollCallback(
 
   if (!poll) {
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -23811,9 +23327,9 @@ async function handlePollCallback(
       );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -23846,9 +23362,9 @@ async function handlePollCallback(
     "pollresults"
   ) {
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id
@@ -23857,9 +23373,9 @@ async function handlePollCallback(
     } catch {}
 
     try {
-      await telegram("editMessageText",
-      env,
-      
+      await telegram(
+        env,
+        "editMessageText",
         {
           chat_id:
             chatId,
@@ -23927,9 +23443,9 @@ async function handlePollCallback(
       );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -24139,7 +23655,7 @@ async function routePollSystem(
    DEFAULT RULES
 ========================= */
 
-function getDefaultRulesConfig__legacy_1() {
+function getDefaultRulesConfig() {
   return {
     enabled: true,
 
@@ -24166,7 +23682,7 @@ function getDefaultRulesConfig__legacy_1() {
    GET RULES
 ========================= */
 
-async function getRulesConfig__legacy_1(
+async function getRulesConfig(
   env,
   chatId
 ) {
@@ -24188,7 +23704,7 @@ async function getRulesConfig__legacy_1(
    SAVE RULES
 ========================= */
 
-async function saveRulesConfig__legacy_1(
+async function saveRulesConfig(
   env,
   chatId,
   config
@@ -24313,7 +23829,7 @@ function buildRulesText(
    RULES KEYBOARD
 ========================= */
 
-function buildRulesKeyboard__legacy_1(
+function buildRulesKeyboard(
   isAdmin = false
 ) {
   const rows = [
@@ -24400,9 +23916,9 @@ async function sendRules(
     return false;
   }
 
-  await telegram("sendMessage",
-      env,
-      
+  await telegram(
+    env,
+    "sendMessage",
     {
       chat_id:
         chatId,
@@ -24430,7 +23946,7 @@ async function sendRules(
    RULES COMMAND
 ========================= */
 
-async function handleRulesCommand__legacy_4(
+async function handleRulesCommand(
   message,
   env
 ) {
@@ -24721,9 +24237,9 @@ async function handleRulesCommand__legacy_4(
      DEFAULT VIEW
   ========================= */
 
-  await telegram("sendMessage",
-      env,
-      
+  await telegram(
+    env,
+    "sendMessage",
     {
       chat_id:
         chatId,
@@ -24755,7 +24271,7 @@ async function handleRulesCommand__legacy_4(
    RULES CALLBACK
 ========================= */
 
-async function handleRulesCallback__legacy_2(
+async function handleRulesCallback(
   callback,
   env
 ) {
@@ -24816,9 +24332,9 @@ async function handleRulesCallback__legacy_2(
     data ===
     "rules:view"
   ) {
-    await telegram("editMessageText",
+    await telegram(
       env,
-      
+      "editMessageText",
       {
         chat_id:
           chatId,
@@ -24842,9 +24358,9 @@ async function handleRulesCallback__legacy_2(
     );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id
@@ -24864,9 +24380,9 @@ async function handleRulesCallback__legacy_2(
     data ===
     "rules:refresh"
   ) {
-    await telegram("editMessageText",
+    await telegram(
       env,
-      
+      "editMessageText",
       {
         chat_id:
           chatId,
@@ -24890,9 +24406,9 @@ async function handleRulesCallback__legacy_2(
     );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -24917,9 +24433,9 @@ async function handleRulesCallback__legacy_2(
   ) {
     if (!admin) {
       try {
-        await telegram("answerCallbackQuery",
-      env,
-      
+        await telegram(
+          env,
+          "answerCallbackQuery",
           {
             callback_query_id:
               callback.id,
@@ -24948,9 +24464,9 @@ async function handleRulesCallback__legacy_2(
       config
     );
 
-    await telegram("editMessageText",
+    await telegram(
       env,
-      
+      "editMessageText",
       {
         chat_id:
           chatId,
@@ -24974,9 +24490,9 @@ async function handleRulesCallback__legacy_2(
     );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -25005,9 +24521,9 @@ async function handleRulesCallback__legacy_2(
   ) {
     if (!admin) {
       try {
-        await telegram("answerCallbackQuery",
-      env,
-      
+        await telegram(
+          env,
+          "answerCallbackQuery",
           {
             callback_query_id:
               callback.id,
@@ -25048,9 +24564,9 @@ async function handleRulesCallback__legacy_2(
           );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -25078,7 +24594,7 @@ async function handleRulesCallback__legacy_2(
    RULES ROUTER
 ========================= */
 
-async function routeRulesSystem__legacy_1(
+async function routeRulesSystem(
   update,
   env
 ) {
@@ -25826,9 +25342,9 @@ async function deleteLinkMessage(
   messageId
 ) {
   try {
-    await telegram("deleteMessage",
+    await telegram(
       env,
-      
+      "deleteMessage",
       {
         chat_id:
           chatId,
@@ -25877,9 +25393,9 @@ async function muteLinkUser(
     );
 
   try {
-    await telegram("restrictChatMember",
+    await telegram(
       env,
-      
+      "restrictChatMember",
       {
         chat_id:
           chatId,
@@ -27965,9 +27481,9 @@ async function deletePreviousWelcome(
   }
 
   try {
-    await telegram("deleteMessage",
+    await telegram(
       env,
-      
+      "deleteMessage",
       {
         chat_id:
           chatId,
@@ -28086,9 +27602,9 @@ async function sendWelcomeMessage(
 
   try {
     const result =
-      await telegram("sendMessage",
-      env,
-      
+      await telegram(
+        env,
+        "sendMessage",
         {
           chat_id:
             chatId,
@@ -28829,9 +28345,9 @@ async function showAdminPanel(
       messageId;
 
     try {
-      await telegram("editMessageText",
-      env,
-      
+      await telegram(
+        env,
+        "editMessageText",
         payload
       );
 
@@ -28842,9 +28358,9 @@ async function showAdminPanel(
     }
   }
 
-  await telegram("sendMessage",
-      env,
-      
+  await telegram(
+    env,
+    "sendMessage",
     payload
   );
 
@@ -28966,9 +28482,9 @@ async function handleAdminPanelCallback(
     )
   ) {
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -29001,9 +28517,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -29048,9 +28564,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -29097,9 +28613,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -29146,9 +28662,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -29195,9 +28711,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -29260,9 +28776,9 @@ async function handleAdminPanelCallback(
     );
 
     try {
-      await telegram("editMessageText",
-      env,
-      
+      await telegram(
+        env,
+        "editMessageText",
         {
           chat_id:
             chatId,
@@ -29293,9 +28809,9 @@ async function handleAdminPanelCallback(
     } catch {}
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id
@@ -29497,9 +29013,9 @@ async function showGroupRules(
       editMessageId
     ) {
       try {
-        await telegram("editMessageText",
-      env,
-      
+        await telegram(
+          env,
+          "editMessageText",
           {
             chat_id:
               chatId,
@@ -29548,9 +29064,9 @@ async function showGroupRules(
     editMessageId
   ) {
     try {
-      await telegram("editMessageText",
-      env,
-      
+      await telegram(
+        env,
+        "editMessageText",
         {
           chat_id:
             chatId,
@@ -29588,9 +29104,9 @@ async function showGroupRules(
   }
 
   try {
-    await telegram("sendMessage",
+    await telegram(
       env,
-      
+      "sendMessage",
       {
         chat_id:
           chatId,
@@ -29920,9 +29436,9 @@ async function handleRulesCallback(
     );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -29947,9 +29463,9 @@ async function handleRulesCallback(
       );
 
     try {
-      await telegram("editMessageText",
-      env,
-      
+      await telegram(
+        env,
+        "editMessageText",
         {
           chat_id:
             chatId,
@@ -29972,9 +29488,9 @@ async function handleRulesCallback(
     } catch {}
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id
@@ -30069,17 +29585,6 @@ function getDefaultChatStats() {
     bans: 0,
 
     deletedMessages: 0,
-
-    voiceMessages: 0,
-    audioMessages: 0,
-    photoMessages: 0,
-    videoMessages: 0,
-    documentMessages: 0,
-    animationMessages: 0,
-    forwardedMessages: 0,
-    pollMessages: 0,
-    locationMessages: 0,
-    contactMessages: 0,
 
     commands: 0,
 
@@ -30324,18 +29829,6 @@ function buildChatStatsText(
     `🚫 تخلف اسپم: <b>${Number(
       stats.spamViolations || 0
     )}</b>`,
-    "",
-    "🎞️ <b>نوع پیام‌ها</b>",
-    `🎤 ویس: <b>${Number(stats.voiceMessages || 0)}</b>`,
-    `🎵 آهنگ: <b>${Number(stats.audioMessages || 0)}</b>`,
-    `🖼️ عکس: <b>${Number(stats.photoMessages || 0)}</b>`,
-    `🎬 ویدیو: <b>${Number(stats.videoMessages || 0)}</b>`,
-    `📁 فایل: <b>${Number(stats.documentMessages || 0)}</b>`,
-    `🎞️ GIF: <b>${Number(stats.animationMessages || 0)}</b>`,
-    `↪️ فوروارد: <b>${Number(stats.forwardedMessages || 0)}</b>`,
-    `📊 نظرسنجی: <b>${Number(stats.pollMessages || 0)}</b>`,
-    `📍 موقعیت: <b>${Number(stats.locationMessages || 0)}</b>`,
-    `👤 مخاطب: <b>${Number(stats.contactMessages || 0)}</b>`,
     `⚠️ اخطارها: <b>${Number(
       stats.warnings || 0
     )}</b>`,
@@ -30406,9 +29899,9 @@ async function showChatStats(
 
   try {
     const result =
-      await telegram("getChat",
-      env,
-      
+      await telegram(
+        env,
+        "getChat",
         {
           chat_id:
             chatId
@@ -30452,9 +29945,9 @@ async function showChatStats(
       messageId;
 
     try {
-      await telegram("editMessageText",
-      env,
-      
+      await telegram(
+        env,
+        "editMessageText",
         payload
       );
 
@@ -30466,9 +29959,9 @@ async function showChatStats(
   }
 
   try {
-    await telegram("sendMessage",
+    await telegram(
       env,
-      
+      "sendMessage",
       payload
     );
 
@@ -30488,300 +29981,6 @@ async function showChatStats(
 
 
 /* =========================
-   GROUP MEMBER STATS
-========================= */
-
-async function getGroupMemberStats(
-  env,
-  chatId
-) {
-  const kv = getKV(env);
-  const members = [];
-  let cursor = undefined;
-
-  do {
-    const page = await kv.list({
-      prefix: `user:${chatId}:`,
-      limit: 1000,
-      ...(cursor ? { cursor } : {})
-    });
-
-    for (const key of page.keys || []) {
-      try {
-        const data = await kvGet(
-          env,
-          key.name,
-          null
-        );
-
-        if (!data || data.isBot) continue;
-
-        const messages = Number(
-          data.messages || 0
-        );
-
-        if (messages <= 0) continue;
-
-        const firstName = String(
-          data.firstName || ""
-        ).trim();
-
-        const lastName = String(
-          data.lastName || ""
-        ).trim();
-
-        const username = String(
-          data.username || ""
-        ).trim();
-
-        const name =
-          [firstName, lastName]
-            .filter(Boolean)
-            .join(" ")
-            .trim() ||
-          (username ? `@${username}` : "بدون نام");
-
-        members.push({
-          id: Number(data.id || 0),
-          name,
-          username,
-          messages,
-          warnings: Number(data.warnings || 0),
-          deleted: Number(data.deleted || 0),
-          joins: Number(data.joins || 0),
-          leaves: Number(data.leaves || 0),
-          lastSeen: Number(data.lastSeen || 0)
-        });
-      } catch (error) {
-        console.error(
-          "Member stats read:",
-          error?.message || String(error)
-        );
-      }
-    }
-
-    cursor = page.list_complete
-      ? undefined
-      : page.cursor;
-  } while (cursor);
-
-  members.sort(
-    (a, b) =>
-      b.messages - a.messages ||
-      a.id - b.id
-  );
-
-  return members;
-}
-
-
-function buildGroupMemberStatsTexts(
-  stats,
-  members,
-  chat
-) {
-  const title = escapeHTML(
-    chat?.title || "گروه"
-  );
-
-  const totalMessages = members.reduce(
-    (sum, member) =>
-      sum + Number(member.messages || 0),
-    0
-  );
-
-  const totalWarnings = members.reduce(
-    (sum, member) =>
-      sum + Number(member.warnings || 0),
-    0
-  );
-
-  const totalDeleted = members.reduce(
-    (sum, member) =>
-      sum + Number(member.deleted || 0),
-    0
-  );
-
-  const activeMembers = members.length;
-
-  const header = [
-    "📊 <b>آمار گپ</b>",
-    "",
-    `🏠 گروه: <b>${title}</b>`,
-    "",
-    "📌 <b>خلاصه</b>",
-    `👥 اعضای فعال در آمار: <b>${activeMembers}</b>`,
-    `💬 مجموع پیام‌های ثبت‌شده: <b>${totalMessages}</b>`,
-    `⚠️ مجموع اخطارها: <b>${totalWarnings}</b>`,
-    `🗑️ مجموع پیام‌های حذف‌شده: <b>${totalDeleted}</b>`,
-    `🚫 بن‌ها: <b>${Number(stats.bans || 0)}</b>`,
-    `🔇 محدودیت‌ها: <b>${Number(stats.mutes || 0)}</b>`,
-    "",
-    "🏆 <b>رتبه‌بندی اعضا بر اساس تعداد پیام</b>",
-    ""
-  ];
-
-  const lines = members.map(
-    (member, index) => {
-      const safeName = escapeHTML(
-        member.name
-      );
-
-      const username =
-        member.username
-          ? ` (@${escapeHTML(member.username)})`
-          : "";
-
-      return [
-        `${index + 1}. ${safeName}${username}`,
-        `   🆔 <code>${member.id}</code> | 💬 <b>${member.messages}</b> پیام`
-      ].join("\n");
-    }
-  );
-
-  const chunks = [];
-  let current = header.join("\n");
-
-  for (const line of lines) {
-    const candidate =
-      `${current}\n${line}`;
-
-    if (candidate.length > 3800) {
-      chunks.push(current);
-      current = line;
-    } else {
-      current = candidate;
-    }
-  }
-
-  if (current) {
-    chunks.push(current);
-  }
-
-  if (!members.length) {
-    chunks.push(
-      `${header.join("\n")}هنوز آماری از اعضای گپ ثبت نشده است.`
-    );
-  }
-
-  return chunks;
-}
-
-
-async function showGroupMemberStats(
-  env,
-  chatId
-) {
-  const stats = await getChatStats(
-    env,
-    chatId
-  );
-
-  let chat = null;
-
-  try {
-    const result = await telegram(
-      "getChat",
-      env,
-      { chat_id: chatId }
-    );
-
-    chat = result?.result || null;
-  } catch (error) {
-    console.error(
-      "Get chat for member stats:",
-      error?.message || String(error)
-    );
-  }
-
-  const members =
-    await getGroupMemberStats(
-      env,
-      chatId
-    );
-
-  const texts =
-    buildGroupMemberStatsTexts(
-      stats,
-      members,
-      chat
-    );
-
-  for (const text of texts) {
-    try {
-      await telegram(
-        "sendMessage",
-        env,
-        {
-          chat_id: chatId,
-          text,
-          parse_mode: "HTML"
-        }
-      );
-    } catch (error) {
-      console.error(
-        "Send member stats:",
-        error?.message || String(error)
-      );
-      return false;
-    }
-  }
-
-  return true;
-}
-
-
-/* =========================
-   MY STATS COMMAND
-========================= */
-
-async function showMyStats(message, env) {
-  const chatId = Number(message?.chat?.id || 0);
-  const user = message?.from;
-  const userId = Number(user?.id || 0);
-  if (!chatId || !userId || message?.chat?.type === "private") return false;
-
-  const data = await kvGet(env, `user:${chatId}:${userId}`, null) || {};
-  let chatTitle = String(message?.chat?.title || "گروه");
-  try {
-    const result = await telegram("getChat", env, { chat_id: chatId });
-    chatTitle = String(result?.result?.title || chatTitle);
-  } catch {}
-
-  const members = await getGroupMemberStats(env, chatId);
-  const rankIndex = members.findIndex(member => Number(member.id) === userId);
-  const rank = rankIndex >= 0 ? rankIndex + 1 : 1;
-  const name = [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || "بدون نام";
-  const username = user.username ? `@${user.username}` : "ندارد";
-  const messages = Number(data.messages || 0);
-
-  const text = [
-    "👤 <b>آمار من</b>",
-    "",
-    `🏠 گپ: <b>${escapeHTML(chatTitle)}</b>`,
-    `👤 نام: <b>${escapeHTML(name)}</b>`,
-    `🔹 نام کاربری: <b>${escapeHTML(username)}</b>`,
-    `🆔 آیدی: <code>${userId}</code>`,
-    `💬 تعداد پیام‌ها: <b>${messages}</b>`,
-    `🏆 رتبه از نظر پیام: <b>${rank}</b> از <b>${members.length}</b>`,
-    "",
-    "🎞️ <b>فعالیت رسانه‌ای</b>",
-    `🎤 ویس: <b>${Number(data.voiceMessages || 0)}</b>`,
-    `🎵 آهنگ: <b>${Number(data.audioMessages || 0)}</b>`,
-    `🖼️ عکس: <b>${Number(data.photoMessages || 0)}</b>`,
-    `🎬 ویدیو: <b>${Number(data.videoMessages || 0)}</b>`,
-    `📁 فایل: <b>${Number(data.documentMessages || 0)}</b>`,
-    `🎞️ GIF: <b>${Number(data.animationMessages || 0)}</b>`,
-    `↪️ فوروارد: <b>${Number(data.forwardedMessages || 0)}</b>`
-  ].join("\n");
-
-  await sendMessage(env, chatId, text, {
-    reply_to_message_id: message.message_id
-  });
-  return true;
-}
-
-/* =========================
    STATS COMMAND
 ========================= */
 
@@ -30794,32 +29993,19 @@ async function handleStatsCommand(
       message?.text
     );
 
-  const rawText = normalizeCommandText(message?.text || "");
-
   if (
-    rawText === "آمار" ||
-    rawText === "آمار گپ" ||
-    rawText === "آمار_گپ" ||
-    rawText === "/آمار" ||
-    rawText === "/آمار گپ" ||
-    rawText === "/آمار_گپ" ||
-    rawText === "آمارم" ||
-    rawText === "/آمارم"
+    !parsed ||
+    ![
+      "stats",
+      "stat",
+      "statistics",
+      "آمار",
+      "گزارش",
+      "آمار_گروه"
+    ].includes(
+      parsed.command
+    )
   ) {
-    if (rawText === "آمارم" || rawText === "/آمارم") {
-      return await showMyStats(message, env);
-    }
-    return await showGroupMemberStats(env, message.chat.id);
-  }
-
-  if (!parsed) {
-    return false;
-  }
-  if (rawText === "آمارم" || rawText === "/آمارم") {
-    return await showMyStats(message, env);
-  }
-
-  if (![`stats`, `stat`, `statistics`, `آمار`, `گزارش`, `آمار_گروه`].includes(parsed.command)) {
     return false;
   }
 
@@ -30832,7 +30018,21 @@ async function handleStatsCommand(
       0
     );
 
+  if (
+    !await isAdmin(
+      env,
+      chatId,
+      userId
+    )
+  ) {
+    await sendMessage(
+      env,
+      chatId,
+      "⛔ فقط مدیران می‌توانند آمار گروه را مشاهده کنند."
+    );
 
+    return true;
+  }
 
   await incrementStat(
     env,
@@ -30840,20 +30040,7 @@ async function handleStatsCommand(
     "commands"
   );
 
-  const wantsGroupStats =
-    parsed.args?.some(
-      arg =>
-        ["گپ", "گروه"].includes(
-          String(arg || "").trim()
-        )
-    ) ||
-    String(message?.text || "")
-      .trim()
-      .replace(/\u200c/g, " ")
-      .replace(/\s+/g, " ")
-      .toLowerCase() === "آمار گپ";
-
-  await showGroupMemberStats(
+  await showChatStats(
     env,
     chatId
   );
@@ -30980,9 +30167,9 @@ async function handleStatsCallback(
     )
   ) {
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -31010,9 +30197,9 @@ async function handleStatsCallback(
     );
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
           callback_query_id:
             callback.id,
@@ -31144,122 +30331,202 @@ async function routeCallbackQuery(
   update,
   env
 ) {
-  if (
-    !update?.callback_query
-  ) {
+  if (!update?.callback_query) {
     return false;
   }
 
-  const callback =
-    update.callback_query;
+  const callback = update.callback_query;
+  let data = String(callback.data || "");
 
-  const data =
-    String(
-      callback.data ||
-      ""
-    );
+  if (data.startsWith("v5:")) {
+    try { return await v5RouteCallback(env, callback); }
+    catch (error) { console.error("V5 callback layer:", getSafeErrorMessage(error)); return true; }
+  }
 
   /*
-   * Answer unknown callbacks safely.
+   * This is the single callback entry point.  Older parts of the
+   * worker use several callback namespaces, so normalize legacy
+   * aliases here instead of leaving buttons to the unknown-callback
+   * branch.  No existing handler is removed.
    */
+  const aliases = {
+    "admin:main": "panel:main",
+    "admin:security": "panel:security",
+    "admin:settings": "panel:settings",
+    "admin:warnings": "panel:warnings",
+    "admin:rules": "panel:rules",
+    "admin:stats": "panel:stats",
+    "admin:refresh": "panel:refresh",
+    "admin:antispam": "panel:antispam",
+    "admin:antilink": "panel:links",
+    "security:members": "panel:moderation",
+    "security:reports": "panel:reports",
+    "security:links": "security:antilink"
+  };
+
+  data = aliases[data] || data;
 
   try {
-
+    /* Poll buttons have their own complete state machine. */
     if (
-      data.startsWith(
-        "admin:"
-      )
+      data.startsWith("pollvote:") ||
+      data.startsWith("pollresults:") ||
+      data.startsWith("pollclose:")
     ) {
-      const handled = await runBotHandler(
+      return await runBotHandler(
+        "Poll Callback",
+        handlePollCallback,
+        { ...callback, data },
+        env
+      );
+    }
+
+    /* Advanced panel aliases and link/antispam controls must run
+       before the legacy core router, because the legacy router
+       intentionally treats these newer panel routes as unknown. */
+    if (
+      data.startsWith("admin:") ||
+      data.startsWith("antispam:") ||
+      data.startsWith("links:") ||
+      data === "panel:antispam" ||
+      data === "panel:links" ||
+      data === "panel:reports" ||
+      data === "panel:refresh"
+    ) {
+      const result = await runBotHandler(
         "Admin Callback",
         handleAdminPanelCallback,
-        callback,
+        { ...callback, data },
         env
       );
-      if (handled) return true;
+      if (result !== false) return true;
     }
 
-
+    /* Core panel, moderation, warning and toggle callbacks. */
     if (
-      data.startsWith(
-        "rules:"
-      )
+      data.startsWith("panel:") ||
+      data.startsWith("toggle:") ||
+      data.startsWith("warning:") ||
+      data.startsWith("mod:")
     ) {
-      const handled = await runBotHandler(
+      const result = await runBotHandler(
+        "Core Callback",
+        handleCallbackQuery,
+        { ...callback, data },
+        env
+      );
+      if (result !== false) return true;
+    }
+
+    /* Security panel has its own settings store. */
+    if (data.startsWith("security:")) {
+      const result = await runBotHandler(
+        "Security Callback",
+        handleSecurityCallback,
+        { ...callback, data },
+        env
+      );
+      if (result !== false) return true;
+    }
+
+    /* Welcome/goodbye toggles from the legacy settings panel. */
+    if (
+      data === "settings:welcome" ||
+      data === "settings:notifications" ||
+      data === "settings:cleanup"
+    ) {
+      const chatId = callback.message?.chat?.id;
+      if (!chatId) return true;
+
+      await answerCallback(env, callback.id);
+
+      if (data === "settings:welcome") {
+        await showWelcomePanel(env, chatId);
+        return true;
+      }
+
+      if (data === "settings:notifications") {
+        await callbackLogsPanel(env, callback);
+        return true;
+      }
+
+      await sendMessage(
+        env,
+        chatId,
+        [
+          "🧹 <b>مدیریت پاکسازی</b>",
+          "",
+          "برای پاکسازی پیام‌های ثبت‌شده از دستور پاکسازی استفاده کنید."
+        ].join("\n"),
+        backKeyboard()
+      );
+      return true;
+    }
+
+    /* Complete rules/statistics handlers. */
+    if (data.startsWith("rules:")) {
+      const result = await runBotHandler(
         "Rules Callback",
         handleRulesCallback,
-        callback,
+        { ...callback, data },
         env
       );
-      if (handled) return true;
+      if (result !== false) return true;
     }
 
-
-    if (
-      data.startsWith(
-        "stats:"
-      )
-    ) {
-      const handled = await runBotHandler(
+    if (data.startsWith("stats:")) {
+      const result = await runBotHandler(
         "Stats Callback",
         handleStatsCallback,
-        callback,
+        { ...callback, data },
         env
       );
-      if (handled) return true;
+      if (result !== false) return true;
     }
 
-
-    /*
-     * Full callback engine for panel/toggle/mod/warning callbacks.
-     */
-    if (typeof handleCallbackQuery === "function") {
-      const handled = await runBotHandler(
-        "Full Callback Engine",
-        async (cb, runtimeEnv) => {
-          await handleCallbackQuery(cb, runtimeEnv);
-          return true;
-        },
-        callback,
-        env
-      );
-      if (handled) return true;
-    }
-
-    /*
-     * Unknown callback.
-     */
+    /* Legacy log callbacks, when present. */
+    const logResult = await runBotHandler(
+      "Log Callback",
+      handleLogCallback,
+      { ...callback, data },
+      env
+    );
+    if (logResult !== false) return true;
 
     try {
-      await telegram("answerCallbackQuery",
-      env,
-      
+      await telegram(
+        env,
+        "answerCallbackQuery",
         {
-          callback_query_id:
-            callback.id,
-
-          text:
-            "ℹ️ این دکمه دیگر فعال نیست."
+          callback_query_id: callback.id,
+          text: "⚠️ این گزینه در نسخه فعلی پشتیبانی نمی‌شود.",
+          show_alert: true
         }
       );
     } catch {}
 
     return true;
-
-  } catch (
-    error
-  ) {
+  } catch (error) {
     console.error(
       "Callback router:",
-      getSafeErrorMessage(
-        error
-      )
+      getSafeErrorMessage(error)
     );
+
+    try {
+      await telegram(
+        env,
+        "answerCallbackQuery",
+        {
+          callback_query_id: callback.id,
+          text: "❌ اجرای این گزینه با خطا مواجه شد.",
+          show_alert: true
+        }
+      );
+    } catch {}
 
     return true;
   }
 }
-
 
 /* =========================
    MESSAGE ROUTER
@@ -31291,6 +30558,20 @@ async function routeMessage(
   }
 
 
+  try {
+    if (await v5StateMessage(env, message)) return true;
+    if (await v5RouteMessage(env, message)) return true;
+  } catch (error) {
+    console.error("V5 message layer:", getSafeErrorMessage(error));
+  }
+
+  if (message.chat?.type === "group" || message.chat?.type === "supergroup") {
+    try {
+      const ids = await kvGet(env, `v5:messages:${message.chat.id}`, []) || [];
+      if (message.message_id) { ids.push(Number(message.message_id)); await kvPut(env, `v5:messages:${message.chat.id}`, ids.slice(-500)); }
+    } catch {}
+  }
+
   const chatType =
     message.chat?.type;
 
@@ -31303,40 +30584,12 @@ async function routeMessage(
     chatType ===
       "private"
   ) {
-    if (
-      await runBotHandler(
-        "Private Command Router",
-        routeBotCommand,
-        message,
-        env
-      )
-    ) {
-      return true;
-    }
-
-    if (
-      await runBotHandler(
-        "Private Natural Commands",
-        handleNaturalCommandText,
-        message,
-        env
-      )
-    ) {
-      return true;
-    }
-
-    if (
-      await runBotHandler(
-        "Bot Wake Word",
-        handleBotWakeWord,
-        message,
-        env
-      )
-    ) {
-      return true;
-    }
-
-    return false;
+    return await runBotHandler(
+      "Private Handler",
+      handlePrivate,
+      message,
+      env
+    );
   }
 
 
@@ -31352,7 +30605,7 @@ async function routeMessage(
   ) {
 
     /*
-     * Keep group and per-user statistics updated.
+     * Keep group statistics updated.
      */
 
     try {
@@ -31361,18 +30614,6 @@ async function routeMessage(
         message.chat.id,
         "messages"
       );
-
-      if (
-        message.from &&
-        !message.from.is_bot
-      ) {
-        await updateUserActivity(
-          env,
-          message.chat.id,
-          message.from,
-          message
-        );
-      }
     } catch (
       error
     ) {
@@ -31384,41 +30625,6 @@ async function routeMessage(
       );
     }
 
-
-    /*
-     * Enforce configured locks before command handling.
-     * Locked content must not enter the group, regardless of role.
-     */
-
-    try {
-      const lockSettings = await getSettings(
-        env,
-        message.chat.id
-      );
-
-      if (
-        getLockedMediaType(message, lockSettings)
-      ) {
-        const lockedType = getLockedMediaType(
-          message,
-          lockSettings
-        );
-
-        await deleteAndNotify(
-          env,
-          message.chat.id,
-          message.message_id,
-          `🚫 ارسال <b>${escapeHTML(lockedType)}</b> در این گروه قفل است.`
-        );
-
-        return true;
-      }
-    } catch (error) {
-      console.error(
-        "Early lock enforcement:",
-        getSafeErrorMessage(error)
-      );
-    }
 
     /*
      * Admin panel commands.
@@ -31454,86 +30660,6 @@ async function routeMessage(
             },
             runtimeEnv
           ),
-        message,
-        env
-      )
-    ) {
-      return true;
-    }
-
-
-    /*
-     * Unified command router.
-     *
-     * Commands must be handled before
-     * normal group-message processing.
-     */
-
-    if (
-      await runBotHandler(
-        "Command Router",
-        routeBotCommand,
-        message,
-        env
-      )
-    ) {
-      return true;
-    }
-
-    if (
-      await runBotHandler(
-        "Natural Command Router",
-        handleNaturalCommandText,
-        message,
-        env
-      )
-    ) {
-      return true;
-    }
-
-
-    /* Additional command families from earlier sections. */
-    if (
-      await runBotHandler(
-        "Group Command Engine",
-        handleGroupCommand,
-        message,
-        env
-      )
-    ) {
-      return true;
-    }
-
-    if (
-      await runBotHandler(
-        "Message Tools",
-        async (msg, runtimeEnv) => routeMessageTools(msg, runtimeEnv),
-        message,
-        env
-      )
-    ) {
-      return true;
-    }
-
-    if (
-      await runBotHandler(
-        "Bot Wake Word",
-        handleBotWakeWord,
-        message,
-        env
-      )
-    ) {
-      return true;
-    }
-
-    if (await enforceManagedUserRateLimit(message, env)) {
-      return true;
-    }
-
-    if (
-      await runBotHandler(
-        "User Management",
-        handleUserManagementNaturalCommand,
         message,
         env
       )
@@ -31666,13 +30792,6 @@ async function routeMessage(
 /* =========================
    MY CHAT MEMBER ROUTER
 ========================= */
-
-async function handleMyChatMember(update, env) {
-  const chat = update?.chat;
-  if (!chat) return false;
-  console.log("Bot membership update:", chat.id, update?.new_chat_member?.status || "unknown");
-  return true;
-}
 
 async function routeMyChatMember(
   update,
@@ -31854,7 +30973,357 @@ async function handleWebhookUpdate(
    FINAL CLOUDFLARE WORKER EXPORT
 ============================================================ */
 
+
+/* ============================================================
+   V5 EXTENSION — REQUESTED FEATURES
+   Additive layer: does not replace existing handlers.
+============================================================ */
+
+const V5_FEATURE_DEFAULTS = {
+  botCall: true,
+  contentLocks: true,
+  badWords: true,
+  ownerAdminFlow: true,
+  games: true,
+  pinCommand: true,
+  ownerManagement: true,
+  groupLock: true,
+  userPermissions: true,
+  dailyReport: true,
+  professionalStats: true,
+  cleanup: true,
+  obsceneDetection: false
+};
+
+function v5OwnerKey(userId) { return `v5:owner:${Number(userId)}`; }
+function v5FeatureKey() { return `v5:features`; }
+function v5BadWordsKey(chatId) { return `v5:badwords:${chatId}`; }
+function v5UserKey(chatId,userId) { return `v5:user:${chatId}:${userId}`; }
+function v5UsersKey(chatId) { return `v5:users:${chatId}`; }
+function v5StateKey(chatId,userId) { return `v5:state:${chatId}:${userId}`; }
+function v5MuteKey(chatId,userId) { return `v5:mute:${chatId}:${userId}`; }
+function v5UserPermKey(chatId,userId) { return `v5:uperm:${chatId}:${userId}`; }
+function v5DayKey(chatId,userId,date) { return `v5:day:${chatId}:${userId}:${date}`; }
+function v5FeatureChatKey(chatId) { return `v5:chatfeatures:${chatId}`; }
+
+async function v5IsOwner(env,userId) {
+  const id=Number(userId||0);
+  if (isOwner(id)) return true;
+  return Boolean(await kvGet(env,v5OwnerKey(id),false));
+}
+
+async function v5GetFeatures(env) {
+  return {...V5_FEATURE_DEFAULTS,...(await kvGet(env,v5FeatureKey(),{} )||{})};
+}
+async function v5SaveFeatures(env,x) { return kvPut(env,v5FeatureKey(),{...V5_FEATURE_DEFAULTS,...x}); }
+async function v5GetChatFeatures(env,chatId) {
+  const global=await v5GetFeatures(env); const local=await kvGet(env,v5FeatureChatKey(chatId),{})||{};
+  return {...V5_FEATURE_DEFAULTS,...global,...local};
+}
+async function v5SaveChatFeatures(env,chatId,x) { return kvPut(env,v5FeatureChatKey(chatId),{...V5_FEATURE_DEFAULTS,...x}); }
+
+function v5Name(u) { return userName(u||{}) || `کاربر ${Number(u?.id||0)}`; }
+function v5UserLabel(u) {
+  const n=escapeHTML(v5Name(u));
+  const un=u?.username ? ` @${escapeHTML(u.username)}` : '';
+  return `${n}${un}`;
+}
+function v5ExactCommand(text) {
+  return String(text||'').trim().replace(/^\/+/,'').split(/\s+/)[0].toLowerCase();
+}
+function v5FullText(text) { return String(text||'').trim().replace(/^\/+/,'').replace(/\s+/g,' ').toLowerCase(); }
+function v5ReplyUser(message) { return message?.reply_to_message?.from || null; }
+
+async function v5GetUserStats(env,chatId,user) {
+  const id=Number(user?.id||0); if(!id) return null;
+  return {...{
+    userId:id,name:v5Name(user),username:user?.username||'',messages:0,voice:0,photo:0,video:0,
+    document:0,gif:0,forward:0,poll:0,location:0,contact:0,audio:0,warnings:0,mutes:0,bans:0,badWords:0,lastSeen:0
+  },...(await kvGet(env,v5UserKey(chatId,id),{})||{})};
+}
+async function v5SaveUserStats(env,chatId,st) { await kvPut(env,v5UserKey(chatId,st.userId),st); }
+async function v5GetUserPerm(env,chatId,userId) {
+  return {can_send_messages:true,can_send_gif:true,can_send_video:true,can_send_file:true,can_send_voice:true,can_send_audio:true,can_send_video_chat:true,intervalSeconds:0,...(await kvGet(env,v5UserPermKey(chatId,userId),{})||{})};
+}
+async function v5SaveUserPerm(env,chatId,userId,perm) { return kvPut(env,v5UserPermKey(chatId,userId),perm); }
+async function v5UserPermissionCheck(env,message) {
+  if(!message?.chat?.id || !message.from?.id) return false;
+  if(await isAdmin(env,message.chat.id,Number(message.from.id))) return false;
+  const p=await v5GetUserPerm(env,message.chat.id,message.from.id);
+  if(p.can_send_messages===false) { await deleteMessage(env,message.chat.id,message.message_id); return true; }
+  let blocked=false;
+  if(hasAnimation(message)&&p.can_send_gif===false) blocked=true;
+  if(hasVideo(message)&&p.can_send_video===false) blocked=true;
+  if(hasDocument(message)&&p.can_send_file===false) blocked=true;
+  if(hasVoice(message)&&p.can_send_voice===false) blocked=true;
+  if(hasAudio(message)&&p.can_send_audio===false) blocked=true;
+  if(blocked){ await deleteMessage(env,message.chat.id,message.message_id); await sendMessage(env,message.chat.id,`⚠️ <b>${v5UserLabel(message.from)}</b> ارسال این نوع محتوا برای شما مجاز نیست.`); return true; }
+  if(Number(p.intervalSeconds||0)>0){ const key=`v5:interval:${message.chat.id}:${message.from.id}`; const last=Number(await kvGet(env,key,0)); if(Date.now()-last<p.intervalSeconds*1000){await deleteMessage(env,message.chat.id,message.message_id);await sendMessage(env,message.chat.id,`⏱️ <b>${v5UserLabel(message.from)}</b> رعایت فاصله زمانی پیام الزامی است.`);return true;} await kvPut(env,key,Date.now(),{expirationTtl:Math.max(60,p.intervalSeconds+30)}); }
+  return false;
+}
+
+async function v5TouchUser(env,chatId,user,message) {
+  if(!user?.id) return;
+  const st=await v5GetUserStats(env,chatId,user);
+  st.name=v5Name(user); st.username=user.username||st.username||''; st.messages++;
+  st.lastSeen=Date.now();
+  const tehran=new Date(Date.now()+3.5*3600000); const day=tehran.toISOString().slice(0,10);
+  const dayKey=v5DayKey(chatId,user.id,day); const dayCount=Number(await kvGet(env,dayKey,0))+1; await kvPut(env,dayKey,dayCount,{expirationTtl:60*60*24*45});
+  if(hasVoice(message)) st.voice++;
+  if(hasPhoto(message)) st.photo++;
+  if(hasVideo(message)) st.video++;
+  if(hasDocument(message)) st.document++;
+  if(hasAnimation(message)) st.gif++;
+  if(hasAudio(message)) st.audio++;
+  if(hasPoll(message)) st.poll++;
+  if(message?.location) st.location++;
+  if(message?.contact) st.contact++;
+  if(message?.forward_origin || message?.forward_from || message?.forward_from_chat) st.forward++;
+  await v5SaveUserStats(env,chatId,st);
+  const ids=await kvGet(env,v5UsersKey(chatId),[])||[];
+  if(!ids.includes(Number(user.id))) { ids.push(Number(user.id)); await kvPut(env,v5UsersKey(chatId),ids.slice(-5000)); }
+}
+async function v5AllUsers(env,chatId) {
+  const ids=await kvGet(env,v5UsersKey(chatId),[])||[]; const out=[];
+  for(const id of ids) { const st=await kvGet(env,v5UserKey(chatId,id),null); if(st) out.push(st); }
+  return out.sort((a,b)=>Number(b.messages||0)-Number(a.messages||0));
+}
+
+function v5MessageKind(message) {
+  if(hasPhoto(message)) return ['عکس','lockPhoto'];
+  if(hasVideo(message)) return ['ویدیو','lockVideo'];
+  if(hasDocument(message)) return ['فایل','lockDocument'];
+  if(hasSticker(message)) return ['استیکر','lockSticker'];
+  if(hasVoice(message)) return ['ویس','lockVoice'];
+  if(hasAudio(message)) return ['موزیک','lockAudio'];
+  if(hasAnimation(message)) return ['GIF','lockAnimation'];
+  if(hasPoll(message)) return ['نظرسنجی','lockPoll'];
+  if(message?.location) return ['موقعیت','lockLocation'];
+  if(message?.contact) return ['مخاطب','lockContact'];
+  if(message?.forward_origin || message?.forward_from || message?.forward_from_chat) return ['فوروارد','lockForward'];
+  const text=message?.text||message?.caption||'';
+  if(containsURL(text)) return ['لینک','antiLink'];
+  return null;
+}
+
+async function v5Warn(env,chatId,user,reason) {
+  const st=await v5GetUserStats(env,chatId,user); st.warnings++;
+  await v5SaveUserStats(env,chatId,st);
+  const text=`⚠️ <b>اخطار امنیتی</b>\n\n👤 کاربر: <b>${v5UserLabel(user)}</b>\n🚫 مورد: <b>${escapeHTML(reason)}</b>\n\nاین مورد برخلاف قوانین گروه است.`;
+  await sendMessage(env,chatId,text);
+}
+async function v5Mute(env,chatId,userId,seconds) {
+  const until=Math.floor(Date.now()/1000)+seconds;
+  await muteUser(env,chatId,userId,until);
+  await kvPut(env,v5MuteKey(chatId,userId),until,{expirationTtl:Math.max(seconds,60)});
+}
+async function v5Ban(env,chatId,userId) { await banUser(env,chatId,userId); const st=await v5GetUserStats(env,chatId,{id:userId}); st.bans++; await v5SaveUserStats(env,chatId,st); }
+
+async function v5ContentLock(env,message) {
+  if(!message?.chat?.id || !message.from?.id) return false;
+  const features=await v5GetChatFeatures(env,message.chat.id);
+  if(!features.contentLocks) return false;
+  if(await isAdmin(env,message.chat.id,Number(message.from.id))) return false;
+  const kind=v5MessageKind(message); if(!kind) return false;
+  const [label,key]=kind;
+  const settings=await getSettings(env,message.chat.id);
+  const locked=key==='antiLink' ? Boolean(settings.antiLink || (await getLinkConfig(env,message.chat.id)).enabled) : Boolean(settings[key]);
+  if(!locked) return false;
+  await deleteMessage(env,message.chat.id,message.message_id);
+  await v5Warn(env,message.chat.id,message.from,label);
+  return true;
+}
+
+function v5BotCallText() {
+  const a=['⚡ پرقدرت آماده به کارم','👀 همین دور ورا هستم','🔔 گوش به زنگم','🤖 ربات فعال و آماده به کار هست.'];
+  return a[Math.floor(Math.random()*a.length)]+"\n\n🧩 برای ورود به پنل، کلمه <b>پنل</b> را تایپ کنید.";
+}
+async function v5BotCall(env,message) {
+  const text=String(message?.text||'').trim();
+  if(text!=='ربات') return false;
+  const f=await v5GetChatFeatures(env,message.chat.id); if(!f.botCall) return false;
+  await sendMessage(env,message.chat.id,v5BotCallText(),{reply_to_message_id:message.message_id}); return true;
+}
+
+function v5OwnerPanelKeyboard(features) {
+  const labels={
+    botCall:'🤖 واکنش به ربات',contentLocks:'🔒 قفل محتوا',badWords:'🚫 کلمات ممنوعه',ownerAdminFlow:'👑 افزودن مدیر',
+    games:'🎮 بازی‌ها',pinCommand:'📌 سنجاق',ownerManagement:'👑 مدیریت مالکان',groupLock:'🔐 قفل گپ',userPermissions:'👤 اختیارات کاربران',
+    dailyReport:'🌅 گزارش روزانه',professionalStats:'📊 آمار حرفه‌ای',cleanup:'🧹 پاکسازی',obsceneDetection:'🖼️ تشخیص محتوای نامناسب'
+  };
+  const keys=Object.keys(labels), rows=[];
+  for(let i=0;i<keys.length;i+=2){ const row=[]; for(const k of keys.slice(i,i+2)) row.push({text:`${features[k]?'🟢':'🔴'} ${labels[k]}`,callback_data:`v5:ft:${k}`}); rows.push(row); }
+  rows.push([{text:'⬅️ برگشت',callback_data:'v5:back'}]); return {inline_keyboard:rows};
+}
+async function v5OwnerPanel(env,chatId,messageId=null) {
+  const f=await v5GetFeatures(env);
+  const text='👑 <b>مرکز قابلیت‌های مالک ربات</b>\n\nاز این قسمت قابلیت‌های جدید را فعال یا غیرفعال کنید.';
+  const payload={chat_id:chatId,text,parse_mode:'HTML',reply_markup:v5OwnerPanelKeyboard(f)};
+  if(messageId) { payload.message_id=messageId; try { await telegram('editMessageText',env,payload); return true; } catch{} }
+  await telegram('sendMessage',env,payload); return true;
+}
+
+async function v5BadWords(env,chatId,userId) {
+  if(!(await v5IsOwner(env,userId))) return false;
+  await kvPut(env,v5StateKey(chatId,userId),{type:'badwords_add'});
+  await sendMessage(env,chatId,'🚫 <b>کلمات ممنوعه</b>\n\nکلمات ممنوعه را در پاسخ به همین پیام ارسال کنید.\nهر کلمه را در یک خط بنویسید؛ برای پایان، دکمه «تمام» را بزنید.',{reply_markup:{inline_keyboard:[[{text:'✅ تمام',callback_data:'v5:badwords:done'}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}});
+  return true;
+}
+async function v5AddBadWordsText(env,message) {
+  if(!await v5IsOwner(env,message.from?.id)) return false;
+  const state=await kvGet(env,v5StateKey(message.chat.id,message.from.id),null); if(state?.type!=='badwords_add') return false;
+  if(message.reply_to_message) {
+    const words=String(message.text||'').split(/\n|,/).map(x=>x.trim().toLowerCase()).filter(Boolean);
+    const old=await kvGet(env,v5BadWordsKey(message.chat.id),[])||[];
+    await kvPut(env,v5BadWordsKey(message.chat.id),Array.from(new Set([...old,...words])).slice(0,500));
+    return true;
+  }
+  return false;
+}
+async function v5CheckBadWord(env,message) {
+  if(!message?.text || !message.chat?.id) return false;
+  const f=await v5GetChatFeatures(env,message.chat.id); if(!f.badWords) return false;
+  if(await isAdmin(env,message.chat.id,Number(message.from?.id||0))) return false;
+  const words=await kvGet(env,v5BadWordsKey(message.chat.id),[])||[]; const low=String(message.text).toLowerCase();
+  const hit=words.find(w=>w && low.includes(w)); if(!hit) return false;
+  await deleteMessage(env,message.chat.id,message.message_id);
+  const st=await v5GetUserStats(env,message.chat.id,message.from); st.badWords++; await v5SaveUserStats(env,message.chat.id,st);
+  const warnings=Number(st.badWords||0);
+  if(warnings>=4) await v5Ban(env,message.chat.id,message.from.id); else await v5Mute(env,message.chat.id,message.from.id,120);
+  await sendMessage(env,message.chat.id,`🚫 <b>کاربر ${v5UserLabel(message.from)}</b> شما به دلیل فرستادن کلمات ممنوعه به مدت ۲ دقیقه سکوت داده شدید.\n\n📌 تخلف: <b>${escapeHTML(hit)}</b>\n⚠️ شماره تخلف: <b>${warnings}</b>` ,{reply_markup:{inline_keyboard:[[{text:'👁️ نمایش پیام',callback_data:`v5:bad:show:${message.chat.id}:${message.message_id}`}],[{text:'🔊 لغو سکوت کاربر',callback_data:`v5:bad:unmute:${message.from.id}`}],[{text:'⏱️ تنظیم مدت سکوت',callback_data:`v5:bad:mute:${message.from.id}`},{text:'🚫 بن کاربر',callback_data:`v5:bad:ban:${message.from.id}`}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}});
+  for(const owner of OWNER_IDS) { try { await sendMessage(env,owner,`🚨 <b>هشدار امنیتی</b>\n\nکاربر <b>${v5UserLabel(message.from)}</b> کلمه <b>${escapeHTML(hit)}</b> را در گروه <b>${escapeHTML(message.chat.title||'گروه')}</b> ارسال کرد.\n🤖 اقدام خودکار: ${warnings>=4?'بن':'سکوت ۲ دقیقه‌ای'}.`); } catch{} }
+  return true;
+}
+
+async function v5AddAdminStart(env,message,target) {
+  if(!(await v5IsOwner(env,message.from?.id))) return false;
+  await kvPut(env,v5StateKey(message.chat.id,message.from.id),{type:'add_admin',targetId:Number(target.id),target});
+  const st=await v5GetUserStats(env,message.chat.id,target); const all=await v5AllUsers(env,message.chat.id); const rank=all.findIndex(x=>Number(x.userId)===Number(target.id))+1;
+  await sendMessage(env,message.chat.id,`👑 <b>افزودن مدیر جدید</b>\n\n👤 نام: <b>${v5UserLabel(target)}</b>\n🆔 آیدی: <code>${target.id}</code>\n💬 تعداد چت: <b>${st.messages}</b>\n🏆 رتبه چت: <b>${rank>0?rank:'ثبت نشده'}</b>\n\nآیا از افزودن <b>${v5UserLabel(target)}</b> به عنوان مدیر گپ <b>${escapeHTML(message.chat.title||'گروه')}</b> مطمئن هستید؟\n\nبا ارسال «آره» یا «خیر» در پاسخ به همین پیام انتخاب کنید.`); return true;
+}
+function v5AdminPermKeyboard(perms) {
+ const items=[['can_change_info','تغییرات اطلاعات گروه'],['can_delete_messages','حذف پیام'],['can_restrict_members','محروم کردن کاربران'],['can_invite_users','دعوت کاربران از طریق لینک'],['can_pin_messages','سنجاق کردن پیام‌ها'],['can_manage_topics','ویرایش برچسب اعضا'],['can_manage_video_chats','مدیریت پخش زنده‌ها'],['can_promote_members','افزودن مدیران جدید'],['is_anonymous','ناشناس ماندن']]; const rows=[];
+ for(let i=0;i<items.length;i+=2) rows.push(items.slice(i,i+2).map(([k,t])=>({text:`${perms[k]?'🟢':'🔴'} ${t}`,callback_data:`v5:perm:${k}`})));
+ rows.push([{text:'👑 افزودن مدیر',callback_data:'v5:perm:confirm'},{text:'❌ لغو',callback_data:'v5:perm:cancel'}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]); return {inline_keyboard:rows};
+}
+async function v5AdminPerms(env,messageId,chatId,ownerId,state) { const perms={can_change_info:false,can_delete_messages:true,can_restrict_members:true,can_invite_users:true,can_pin_messages:true,can_manage_topics:false,can_manage_video_chats:true,can_promote_members:false,is_anonymous:false,...(state.perms||{})}; state.perms=perms; await kvPut(env,v5StateKey(chatId,ownerId),state); await editMessage(env,chatId,messageId,'👑 <b>اختیارات مدیر را تعیین کنید</b>\n\n🟢 فعال | 🔴 غیرفعال\n\nپس از انتخاب اختیارات، «افزودن مدیر» را بزنید.',{reply_markup:v5AdminPermKeyboard(perms)}); }
+
+async function v5Promote(env,chatId,targetId,perms) { await telegram('promoteChatMember',env,{chat_id:chatId,user_id:targetId,...perms}); }
+
+async function v5UserPanel(env,message,target) {
+ if(!(await v5IsOwner(env,message.from?.id))) return false;
+ const st=await v5GetUserStats(env,message.chat.id,target), all=await v5AllUsers(env,message.chat.id); const rank=all.findIndex(x=>Number(x.userId)===Number(target.id))+1;
+ let member=null; try{member=await getChatMember(env,message.chat.id,target.id);}catch{}
+ const status=member?.status||'unknown'; const mute=await kvGet(env,v5MuteKey(message.chat.id,target.id),0); const muted=Number(mute)>Math.floor(Date.now()/1000);
+ const text=`👤 <b>اطلاعات و اختیارات کاربر</b>\n\n${v5UserLabel(target)}\n🆔 <code>${target.id}</code>\n💬 چت: <b>${st.messages}</b>\n🏆 رتبه: <b>${rank||'—'}</b>\n⚠️ اخطار: <b>${st.warnings}</b>\n🔇 سکوت: <b>${st.mutes}</b>\n🚫 بن: <b>${st.bans}</b>\n🚫 کلمات ممنوعه: <b>${st.badWords}</b>\n👑 وضعیت: <b>${status}</b>\n${muted?'🔇 وضعیت فعلی: <b>سکوت</b>':'🔊 وضعیت فعلی: <b>آزاد</b>'}`;
+ const kb={inline_keyboard:[[{text:'🔇 سکوت کاربر',callback_data:`v5:user:mute:${target.id}`},{text:'🚫 بن کاربر',callback_data:`v5:user:ban:${target.id}`}],[{text:'👑 افزودن کاربر به عنوان مدیر',callback_data:`v5:user:admin:${target.id}`}],[{text:'⚙️ صفحه بعد',callback_data:`v5:uperm:${target.id}:page2`}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}; await sendMessage(env,message.chat.id,text,{reply_markup:kb}); return true;
+}
+
+async function v5GroupStats(env,chatId) {
+ const users=await v5AllUsers(env,chatId); const stats=await getChatStats(env,chatId); let title='گروه'; try{const c=await telegram('getChat',env,{chat_id:chatId}); title=c.title||title;}catch{}
+ const sum=k=>users.reduce((a,u)=>a+Number(u[k]||0),0); const active=users.filter(u=>Date.now()-Number(u.lastSeen||0)<7*86400000); const inactive=users.filter(u=>Date.now()-Number(u.lastSeen||0)>=7*86400000);
+ const top=users.slice(0,5).map((u,i)=>`${i+1}. ${escapeHTML(u.name)} — <b>${u.messages}</b> چت`).join('\n')||'—';
+ const rules=(await getRulesConfig(env,chatId)).enabled ? '🟢 قوانین فعال' : '🔴 قوانین خاموش';
+ return `📊 <b>آمار حرفه‌ای گپ ${escapeHTML(title)}</b>\n\n🤖 <b>ربات امنیتی</b>\n\n${rules}\n👥 اعضای ثبت‌شده: <b>${users.length}</b>\n🟢 فعالان اخیر: <b>${active.length}</b>\n🔴 کم‌فعال/غیرفعال: <b>${inactive.length}</b>\n\n💬 کل چت‌ها: <b>${sum('messages')}</b>\n🎤 ویس: <b>${sum('voice')}</b>\n🖼️ عکس: <b>${sum('photo')}</b>\n🎬 ویدیو: <b>${sum('video')}</b>\n📁 فایل: <b>${sum('document')}</b>\n🎞️ GIF: <b>${sum('gif')}</b>\n🎵 موزیک: <b>${sum('audio')}</b>\n↪️ فوروارد: <b>${sum('forward')}</b>\n📊 نظرسنجی: <b>${sum('poll')}</b>\n📍 موقعیت: <b>${sum('location')}</b>\n👤 مخاطب: <b>${sum('contact')}</b>\n\n🏆 <b>۵ نفر فعال‌تر</b>\n${top}\n\n🛡️ تخلفات لینک: <b>${Number(stats.linkViolations||0)}</b>\n🚨 تخلفات اسپم: <b>${Number(stats.spamViolations||0)}</b>`;
+}
+async function v5MyStats(env,message,target) { const st=await v5GetUserStats(env,message.chat.id,target), all=await v5AllUsers(env,message.chat.id); const rank=all.findIndex(x=>Number(x.userId)===Number(target.id))+1; return `👤 <b>آمار من</b>\n\n🏷️ نام: <b>${v5UserLabel(target)}</b>\n🆔 آیدی: <code>${target.id}</code>\n📛 نام کاربری: <b>${escapeHTML(target.username?`@${target.username}`:'ندارد')}</b>\n🏠 گپ: <b>${escapeHTML(message.chat.title||'گروه')}</b>\n💬 تعداد چت: <b>${st.messages}</b>\n🏆 رتبه چت: <b>${rank||'—'}</b>\n🎤 ویس: <b>${st.voice}</b> | 🎬 ویدیو: <b>${st.video}</b> | 🖼️ عکس: <b>${st.photo}</b>\n📁 فایل: <b>${st.document}</b> | 🎞️ GIF: <b>${st.gif}</b> | ↪️ فوروارد: <b>${st.forward}</b>`; }
+
+async function v5LinkMenu(env,message) {
+  const full=v5FullText(message.text); if(full!=='لینک') return false;
+  if(!await isAdmin(env,message.chat.id,message.from.id)) return false;
+  await sendMessage(env,message.chat.id,'🔗 <b>نوع لینک را انتخاب کنید</b>\n\nکدام نوع لینک را می‌خواهید دریافت کنید؟',{reply_markup:{inline_keyboard:[[{text:'🔗 دریافت لینک گپ',callback_data:'v5:link:group'},{text:'⏳ دریافت لینک یک‌بار مصرف',callback_data:'v5:link:once'}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}}); return true;
+}
+
+async function v5PinCommand(env,message) { if(v5ExactCommand(message.text)!=='سنجاق') return false; if(!message.reply_to_message) return false; if(!await isAdmin(env,message.chat.id,message.from.id)) return false; await telegram('pinChatMessage',env,{chat_id:message.chat.id,message_id:message.reply_to_message.message_id,disable_notification:false}); await sendMessage(env,message.chat.id,'📌 <b>پیام با موفقیت سنجاق شد.</b>'); return true; }
+async function v5GroupLock(env,message,open) { if(!(await v5IsOwner(env,message.from.id))) return false; await telegram('setChatPermissions',env,{chat_id:message.chat.id,permissions:open?{can_send_messages:true,can_send_audios:true,can_send_documents:true,can_send_photos:true,can_send_videos:true,can_send_video_notes:true,can_send_voice_notes:true,can_send_polls:true,can_send_other_messages:true,can_add_web_page_previews:true,can_invite_users:true}:{can_send_messages:false,can_send_audios:false,can_send_documents:false,can_send_photos:false,can_send_videos:false,can_send_video_notes:false,can_send_voice_notes:false,can_send_polls:false,can_send_other_messages:false,can_add_web_page_previews:false}}); await sendMessage(env,message.chat.id,open?'🔓 <b>گپ باز شد.</b>':'🔐 <b>گپ بسته شد.</b>'); return true; }
+async function v5Cleanup(env,message) { if(!(await v5IsOwner(env,message.from.id))) return false; const cmd=v5ExactCommand(message.text); if(!['پاکسازی','پاکسازی_گپ','پاکسازی_گروه'].includes(cmd)) return false; await sendMessage(env,message.chat.id,'🧹 <b>مالک، نوع پاکسازی گروه را انتخاب کنید.</b>',{reply_markup:{inline_keyboard:[[{text:'🧹 پاکسازی کلی گپ',callback_data:'v5:clean:all'},{text:'🎯 پاکسازی دلخواه',callback_data:'v5:clean:custom'}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}}); return true; }
+
+async function v5GameMenu(env,message){ if(v5ExactCommand(message.text)!=='بازی') return false; const f=await v5GetChatFeatures(env,message.chat.id); if(!f.games)return false; await sendMessage(env,message.chat.id,'🎮 <b>مرکز بازی‌ها</b>\n\nبازی موردنظر را انتخاب کنید.',{reply_markup:{inline_keyboard:[[{text:'⭕ دوز',callback_data:'v5:game:ttt'}],[{text:'🪙 شیر یا خط',callback_data:'v5:game:coin'}],[{text:'🎲 تاس',callback_data:'v5:game:dice'}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}}); return true; }
+
+async function v5DailyReport(env,chatId) {
+ const now=new Date(Date.now()+3.5*3600000); const prev=new Date(now.getTime()-86400000); const day=prev.toISOString().slice(0,10);
+ const users=await v5AllUsers(env,chatId); const rows=[]; let total=0; for(const u of users){const n=Number(await kvGet(env,v5DayKey(chatId,u.userId,day),0)); total+=n; if(n) rows.push({name:u.name,messages:n});} rows.sort((a,b)=>b.messages-a.messages); const top=rows.slice(0,5).map((u,i)=>`${i+1}. ${escapeHTML(u.name)} — <b>${u.messages}</b> چت`).join('\n')||'—'; const date=prev.toLocaleDateString('fa-IR'); const weekday=prev.toLocaleDateString('fa-IR',{weekday:'long'}); await sendMessage(env,chatId,`🌅 <b>گزارش صبحگاهی گروه</b>\n\n📅 تاریخ: <b>${date}</b>\n🗓️ روز: <b>${weekday}</b>\n\n💬 کل چت‌های روز قبل: <b>${total}</b>\n\n🏆 <b>فعال‌ترین اعضای روز قبل</b>\n${top}\n\n☀️ صبح بخیر؛ روز خوبی داشته باشید. 🤖`);
+}
+
+async function v5RouteMessage(env,message) {
+ const chatId=message?.chat?.id, uid=Number(message?.from?.id||0); if(!chatId||!uid) return false;
+ if(await v5AddBadWordsText(env,message)) return true;
+ if(message.chat.type==='private') {
+   if(await v5IsOwner(env,uid) && ['پنل','قابلیت‌ها','قابلیت_ها'].includes(v5ExactCommand(message.text))) { await v5OwnerPanel(env,chatId); return true; }
+   return false;
+ }
+ if(!['group','supergroup'].includes(message.chat.type)) return false;
+ await v5TouchUser(env,chatId,message.from,message);
+ try { const chats=await kvGet(env,"v5:daily_chats",[])||[]; if(!chats.includes(Number(chatId))){chats.push(Number(chatId)); await kvPut(env,"v5:daily_chats",chats.slice(-500));} } catch {}
+ if(await v5UserPermissionCheck(env,message)) return true;
+ if(await v5BotCall(env,message)) return true;
+ if(await v5CheckBadWord(env,message)) return true;
+ if(await v5LinkMenu(env,message)) return true;
+ if(await v5PinCommand(env,message)) return true;
+ const c=v5ExactCommand(message.text);
+ const full=v5FullText(message.text);
+ if(c==='آمار' || c==='آمار_گپ' || c==='آمارگپ') { await sendMessage(env,chatId,await v5GroupStats(env,chatId),{reply_markup:{inline_keyboard:[[{text:'🔄 بروزرسانی',callback_data:'v5:stats:refresh'}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}}); return true; }
+ if(c==='آمارم' || c==='آمار_من') { await sendMessage(env,chatId,await v5MyStats(env,message,message.from),{reply_markup:{inline_keyboard:[[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}}); return true; }
+ if(full==='افزودن به مالک روبات' || full==='افزودن به مالک ربات' || c==='افزودن_به_مالک_روبات' || c==='افزودن_به_مالک_ربات') { const target=v5ReplyUser(message); if(target && await v5IsOwner(env,uid)){ await kvPut(env,v5StateKey(chatId,uid),{type:'add_owner',target}); await sendMessage(env,chatId,`👑 آیا از انتخاب <b>${v5UserLabel(target)}</b> به عنوان مالک ربات اطمینان دارید؟
+
+برای تأیید «آره» و برای لغو «خیر» را در پاسخ به همین پیام ارسال کنید.`); return true; } }
+ if(full==='قفل گپ' || full==='قفل_گپ') return v5GroupLock(env,message,false);
+ if(full==='گپ باز' || full==='گپ_باز') return v5GroupLock(env,message,true);
+ if(full==='پاکسازی' || full==='پاکسازی گپ' || full==='پاکسازی گروه' || full==='پاکسازی_گپ' || full==='پاکسازی_گروه') return v5Cleanup(env,message);
+ if(c==='بازی') return v5GameMenu(env,message);
+ if(full==='کلمات ممنوعه' || full==='کلمات_ممنوعه') return v5BadWords(env,chatId,uid);
+ if((c==='اضافه_کردن_ادمین'||c==='افزودن_ادمین'||c==='افزودن_مدیر'||c==='مدیر') && v5ReplyUser(message)) return v5AddAdminStart(env,message,v5ReplyUser(message));
+ if(c==='اختیارات' && v5ReplyUser(message)) return v5UserPanel(env,message,v5ReplyUser(message));
+ if(c==='ربات' && message.text?.trim()==='ربات') return v5BotCall(env,message);
+ if(await v5ContentLock(env,message)) return true;
+ return false;
+}
+
+async function v5RouteCallback(env,callback) {
+ const data=String(callback?.data||''); if(!data.startsWith('v5:')) return false;
+ const uid=Number(callback.from?.id||0), chatId=callback.message?.chat?.id, mid=callback.message?.message_id;
+ if(!chatId) return true;
+ if(!(await v5IsOwner(env,uid)) && !['v5:back','v5:game:coin','v5:game:dice','v5:game:ttt'].includes(data)) { await answerCallback(env,callback.id,'⛔ فقط مالکان ربات دسترسی دارند.',true); return true; }
+ await answerCallback(env,callback.id).catch(()=>{});
+ if(data==='v5:back') { if(await v5IsOwner(env,uid)) await v5OwnerPanel(env,chatId,mid); return true; }
+ if(data.startsWith('v5:ft:')) { const k=data.slice(6); const f=await v5GetFeatures(env); if(k in f) f[k]=!f[k]; await v5SaveFeatures(env,f); await v5OwnerPanel(env,chatId,mid); return true; }
+ if(data==='v5:badwords:done') { await kvDelete(env,v5StateKey(chatId,uid)); await sendMessage(env,chatId,'✅ <b>کلمات ممنوعه با موفقیت ذخیره شدند.</b>'); return true; }
+ if(data==='v5:stats:refresh') { await editMessage(env,chatId,mid,await v5GroupStats(env,chatId),{reply_markup:{inline_keyboard:[[{text:'🔄 بروزرسانی',callback_data:'v5:stats:refresh'}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}}); return true; }
+ if(data.startsWith('v5:perm:')) { const st=await kvGet(env,v5StateKey(chatId,uid),null); if(!st?.targetId)return true; if(data==='v5:perm:confirm'){ await v5Promote(env,chatId,st.targetId,st.perms||{}); await kvDelete(env,v5StateKey(chatId,uid)); await sendMessage(env,chatId,`👑 <b>${v5UserLabel(st.target)}</b> با اختیارات تعیین‌شده به مدیر گروه اضافه شد.`); return true;} if(data==='v5:perm:cancel'){await kvDelete(env,v5StateKey(chatId,uid));await sendMessage(env,chatId,'❌ <b>افزودن مدیر لغو شد.</b>');return true;} const k=data.slice(9); st.perms={...(st.perms||{}),[k]:!Boolean(st.perms?.[k])}; await kvPut(env,v5StateKey(chatId,uid),st); await v5AdminPerms(env,mid,chatId,uid,st); return true; }
+ if(data.startsWith('v5:uperm:')) { const parts=data.split(':'); const targetId=Number(parts[2]); const action=parts[3]; const p=await v5GetUserPerm(env,chatId,targetId); if(action==='page2'){ await editMessage(env,chatId,mid,`👤 <b>اختیارات صفحه دوم</b>
+
+⏱️ فاصله پیام: <b>${p.intervalSeconds||0}</b> ثانیه`,{reply_markup:{inline_keyboard:[[{text:`${p.can_send_messages?'🟢':'🔴'} ارسال چت`,callback_data:`v5:uperm:${targetId}:can_send_messages`}],[{text:`${p.can_send_gif?'🟢':'🔴'} ارسال GIF`,callback_data:`v5:uperm:${targetId}:can_send_gif`},{text:`${p.can_send_video?'🟢':'🔴'} ارسال ویدیو`,callback_data:`v5:uperm:${targetId}:can_send_video`}],[{text:`${p.can_send_file?'🟢':'🔴'} ارسال فایل`,callback_data:`v5:uperm:${targetId}:can_send_file`},{text:`${p.can_send_voice?'🟢':'🔴'} ارسال ویس`,callback_data:`v5:uperm:${targetId}:can_send_voice`}],[{text:`${p.can_send_audio?'🟢':'🔴'} ارسال موزیک`,callback_data:`v5:uperm:${targetId}:can_send_audio`},{text:`${p.can_send_video_chat?'🟢':'🔴'} ارسال پخش زنده`,callback_data:`v5:uperm:${targetId}:can_send_video_chat`}],[{text:'⏱️ بدون محدودیت زمانی',callback_data:`v5:uperm:${targetId}:interval:0`},{text:'⏱️ هر ۵ دقیقه',callback_data:`v5:uperm:${targetId}:interval:300`}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}}); return true; } if(action==='interval'){p.intervalSeconds=Number(parts[4]||0);} else if(action in p){p[action]=!Boolean(p[action]);} await v5SaveUserPerm(env,chatId,targetId,p); return true; }
+ if(data.startsWith('v5:user:')) { const parts=data.split(':'); const action=parts[2], targetId=Number(parts[3]); if(action==='mute'){await v5Mute(env,chatId,targetId,120);await sendMessage(env,chatId,'🔇 <b>کاربر به مدت ۲ دقیقه سکوت شد.</b>');return true;} if(action==='ban'){await v5Ban(env,chatId,targetId);await sendMessage(env,chatId,'🚫 <b>کاربر از گروه اخراج شد.</b>');return true;} if(action==='admin'){const target={id:targetId,first_name:'کاربر'};const st={type:'add_admin',targetId,target,perms:{}};await kvPut(env,v5StateKey(chatId,uid),st);await v5AdminPerms(env,mid,chatId,uid,st);return true;} }
+ if(data.startsWith('v5:bad:')) { const parts=data.split(':'); const action=parts[2], targetId=Number(parts[3]); if(action==='unmute'){await unmuteUser(env,chatId,targetId);await sendMessage(env,chatId,'🔊 <b>سکوت کاربر لغو شد.</b>');return true;} if(action==='mute'){await sendMessage(env,chatId,'⏱️ <b>مدت سکوت را انتخاب کنید.</b>',{reply_markup:{inline_keyboard:[[{text:'۱۰ دقیقه',callback_data:`v5:bad:mt:${targetId}:10`},{text:'۲۰ دقیقه',callback_data:`v5:bad:mt:${targetId}:20`}],[{text:'سکوت دائم',callback_data:`v5:bad:perm:${targetId}`}],[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}});return true;} if(action==='mt'){const mins=Number(parts[4]||10);await v5Mute(env,chatId,targetId,mins*60);await sendMessage(env,chatId,`⏱️ <b>سکوت کاربر برای ${mins} دقیقه تنظیم شد.</b>`);return true;} if(action==='perm'){await muteUser(env,chatId,targetId,0);await sendMessage(env,chatId,'🔇 <b>سکوت دائم اعمال شد.</b>');return true;} if(action==='ban'){await v5Ban(env,chatId,targetId);await sendMessage(env,chatId,'🚫 <b>کاربر به علت استفاده از کلمات ممنوعه از گپ اخراج شد.</b>');return true;} return true; }
+ if(data.startsWith('v5:clean:')) { const a=data.slice(9); if(a==='all'){await sendMessage(env,chatId,'⚠️ <b>آیا اطمینان از حذف پیام‌های ثبت‌شده گپ دارید؟</b>\n\nبرای حذف <code>y</code> و برای لغو <code>n</code> را در پاسخ همین پیام بفرستید.'); await kvPut(env,v5StateKey(chatId,uid),{type:'clean_all'});return true;} if(a==='custom'){await sendMessage(env,chatId,'🎯 <b>تعداد پیام‌های قابل حذف را در پاسخ همین پنل وارد کنید.</b>');await kvPut(env,v5StateKey(chatId,uid),{type:'clean_custom'});return true;} }
+ if(data.startsWith('v5:game:')) { const g=data.slice(8); if(g==='coin'){await sendMessage(env,chatId,Math.random()<.5?'🪙 <b>شیر</b>':'🪙 <b>خط</b>');return true;} if(g==='dice'){await sendMessage(env,chatId,`🎲 <b>نتیجه تاس: ${1+Math.floor(Math.random()*6)}</b>`);return true;} if(g==='ttt'){await sendMessage(env,chatId,'⭕ <b>دوز</b>\n\nنسخه بازی تعاملی دوز در مرحله بعد قابل توسعه است.',{reply_markup:{inline_keyboard:[[{text:'⬅️ برگشت',callback_data:'v5:back'}]]}});return true;} }
+ return true;
+}
+
+async function v5StateMessage(env,message) {
+ if(!await v5IsOwner(env,message.from?.id)) return false;
+ const st=await kvGet(env,v5StateKey(message.chat.id,message.from.id),null); if(!st)return false;
+ const text=String(message.text||'').trim().toLowerCase();
+ if(st.type==='add_owner' && message.reply_to_message && ['آره','اره','بله'].includes(text)){ const target=st.target; await kvPut(env,v5OwnerKey(target.id),true); await kvDelete(env,v5StateKey(message.chat.id,message.from.id)); await sendMessage(env,message.chat.id,`👑 <b>${v5UserLabel(target)}</b> با موفقیت به مالکان ربات اضافه شد.`); return true; }
+ if(st.type==='add_owner' && message.reply_to_message && ['خیر','نه'].includes(text)){ await kvDelete(env,v5StateKey(message.chat.id,message.from.id)); await sendMessage(env,message.chat.id,'⛔ <b>اتوماسیون و افزودن مالک جدید به ربات متوقف شد.</b>'); return true; }
+ if(st.type==='add_admin' && message.reply_to_message && ['آره','اره','بله'].includes(text)){ await v5AdminPerms(env,message.message_id,message.chat.id,message.from.id,st); return true; }
+ if(st.type==='add_admin' && message.reply_to_message && ['خیر','نه'].includes(text)){await kvDelete(env,v5StateKey(message.chat.id,message.from.id));await sendMessage(env,message.chat.id,'❌ <b>افزودن مدیر لغو شد.</b>');return true;}
+ if(st.type==='clean_all' && message.reply_to_message && text==='y'){ await kvDelete(env,v5StateKey(message.chat.id,message.from.id)); await sendMessage(env,message.chat.id,'🧹 <b>پاکسازی پیام‌های ثبت‌شده آغاز شد...</b>'); const ids=await kvGet(env,`v5:messages:${message.chat.id}`,[])||[]; let n=0; for(const id of ids){if(await deleteMessage(env,message.chat.id,id))n++;} await kvPut(env,`v5:messages:${message.chat.id}`,[]); await sendMessage(env,message.chat.id,`✅ <b>تمام پیام‌های قابل حذف حذف شدند.</b>\n🗑️ تعداد حذف‌شده: <b>${n}</b>`);return true; }
+ if(st.type==='clean_all' && message.reply_to_message && text==='n'){await kvDelete(env,v5StateKey(message.chat.id,message.from.id));await sendMessage(env,message.chat.id,'❌ <b>پاکسازی لغو شد.</b>');return true;}
+ if(st.type==='clean_custom' && message.reply_to_message && /^\d+$/.test(text)){ const n=Math.min(500,Number(text));await kvDelete(env,v5StateKey(message.chat.id,message.from.id));const ids=await kvGet(env,`v5:messages:${message.chat.id}`,[])||[];let done=0;for(const id of ids.slice(-n)){if(await deleteMessage(env,message.chat.id,id))done++;}await sendMessage(env,message.chat.id,`✅ <b>پاکسازی انجام شد.</b>\n🗑️ حذف‌شده: <b>${done}</b>`);return true;}
+ return false;
+}
+
 export default {
+
+  async scheduled(event, env, ctx) {
+    try {
+      if (event?.cron) {
+        const chats = await kvGet(env, "v5:daily_chats", []) || [];
+        for (const chatId of chats) await v5DailyReport(env, chatId);
+      }
+    } catch (error) { console.error("V5 scheduled:", getSafeErrorMessage(error)); }
+  },
 
   async fetch(
     request,
