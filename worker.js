@@ -12629,17 +12629,32 @@ async function showOwnerPanel(env, userId, messageId = null) {
 
 async function registerOwnerManagedGroup(env, chat) {
   if (!chat || !["group", "supergroup"].includes(chat.type)) return;
+
   const key = `managed_group:${chat.id}`;
   const current = await kvGet(env, key, null);
+  const title = String(chat.title || current?.title || "گروه");
+  const type = String(chat.type);
+
+  // The group registry is metadata, not per-message activity data.
+  // Preserve the existing record and only write when it is new or its
+  // meaningful metadata has actually changed.
+  if (
+    current?.chatId &&
+    Number(current.chatId) === Number(chat.id) &&
+    String(current.title || "گروه") === title &&
+    String(current.type || type) === type
+  ) {
+    return;
+  }
+
   const data = {
+    ...(current || {}),
     chatId: Number(chat.id),
-    title: String(chat.title || "گروه"),
-    type: String(chat.type),
-    updatedAt: Date.now(),
-    ...(current || {})
+    title,
+    type,
+    updatedAt: Date.now()
   };
-  data.title = String(chat.title || data.title || "گروه");
-  data.updatedAt = Date.now();
+
   await kvPut(env, key, data);
 }
 
@@ -15018,28 +15033,26 @@ async function updateUserActivity(
     return false;
   }
 
-  await registerUser(
-    env,
-    chatId,
-    user
-  );
+  const userId = Number(user.id);
+  const key = `user:${chatId}:${userId}`;
+  const old = await kvGet(env, key, null);
+  const now = Date.now();
 
-  const key =
-    `user:${chatId}:${Number(
-      user.id
-    )}`;
-
-  const data =
-    await kvGet(
-      env,
-      key,
-      {}
-    );
-
-  data.messages =
-    Number(
-      data.messages || 0
-    ) + 1;
+  // Merge registration and activity updates into one read + one write.
+  // This preserves the fields maintained by both previous functions while
+  // eliminating the duplicate registerUser write on every group message.
+  const data = {
+    ...(old || {}),
+    id: userId,
+    firstName: String(user.first_name || "").slice(0, 100),
+    lastName: String(user.last_name || "").slice(0, 100),
+    username: String(user.username || "").slice(0, 100),
+    isBot: Boolean(user.is_bot),
+    firstSeen: old?.firstSeen || now,
+    lastSeen: now,
+    messages: Number(old?.messages || 0) + 1,
+    warnings: Number(old?.warnings || 0)
+  };
 
   const typeCounters = [
     ["voice", hasVoice(message), "voiceMessages"],
@@ -15064,18 +15077,16 @@ async function updateUserActivity(
     data.joins = Number(data.joins || 0) + message.new_chat_members.length;
   }
 
-  data.lastSeen =
-    Date.now();
+  await kvPut(env, key, data);
 
-  await kvPut(
-    env,
-    key,
-    data
-  );
+  // Keep the existing new-user statistic behavior. This is only reached
+  // once per user/chat record, not on every subsequent message.
+  if (!old) {
+    await incrementStat(env, chatId, "users");
+  }
 
   return true;
 }
-
 
 /* =========================
    MEMBER STATS
