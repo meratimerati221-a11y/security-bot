@@ -5293,6 +5293,13 @@ const COMMAND_ALIASES = {
       "/warn",
       "/اخطار",
       "/هشدار"
+    ],
+
+  "/tag":
+    [
+      "/tag",
+      "/تگ",
+      "تگ"
     ]
 
 };
@@ -9040,6 +9047,136 @@ async function removeWarning(
 }
 
 
+/* ============================================================
+   PART 19.5 — UNIFIED MODERATION ACTION ENGINE
+   Centralizes warning -> mute -> quarantine -> ban escalation.
+============================================================ */
+
+function unifiedModerationKey(chatId) {
+  return `moderation_engine:${chatId}`;
+}
+
+function getDefaultUnifiedModerationConfig() {
+  return {
+    enabled: true,
+    warningThreshold: 3,
+    muteSeconds: 300,
+    muteAtWarnings: 3,
+    banAtWarnings: 5,
+    quarantineBeforeBan: true
+  };
+}
+
+function normalizeUnifiedModerationConfig(config) {
+  const base = getDefaultUnifiedModerationConfig();
+  const cfg = config && typeof config === "object" ? config : {};
+  const warningThreshold = Math.max(1, Math.min(20, Number(cfg.warningThreshold ?? base.warningThreshold)));
+  const muteSeconds = Math.max(30, Math.min(7 * 24 * 60 * 60, Number(cfg.muteSeconds ?? base.muteSeconds)));
+  const muteAtWarnings = Math.max(warningThreshold, Math.min(20, Number(cfg.muteAtWarnings ?? base.muteAtWarnings)));
+  let banAtWarnings = Math.max(0, Math.min(20, Number(cfg.banAtWarnings ?? base.banAtWarnings)));
+  if (banAtWarnings > 0) banAtWarnings = Math.max(muteAtWarnings, banAtWarnings);
+  return {
+    enabled: cfg.enabled !== false,
+    warningThreshold,
+    muteSeconds,
+    muteAtWarnings,
+    banAtWarnings,
+    quarantineBeforeBan: cfg.quarantineBeforeBan !== false
+  };
+}
+
+async function getUnifiedModerationConfig(env, chatId) {
+  const stored = await kvGet(env, unifiedModerationKey(chatId), null);
+  return normalizeUnifiedModerationConfig(stored);
+}
+
+async function saveUnifiedModerationConfig(env, chatId, config) {
+  await kvPut(env, unifiedModerationKey(chatId), normalizeUnifiedModerationConfig(config));
+}
+
+async function applyUnifiedViolation(message, env, options = {}) {
+  const chatId = Number(message?.chat?.id || options.chatId || 0);
+  const userId = Number(message?.from?.id || options.userId || 0);
+  const actorId = Number(options.actorId || 0);
+  if (!chatId || !userId || isProtectedUser(userId)) {
+    return { handled: false, warnings: 0, muted: false, banned: false, quarantined: false };
+  }
+  if (await isAdmin(env, chatId, userId)) {
+    return { handled: false, warnings: 0, muted: false, banned: false, quarantined: false, exempt: true };
+  }
+
+  const cfg = await getUnifiedModerationConfig(env, chatId);
+  if (!cfg.enabled) return { handled: false, warnings: 0, muted: false, banned: false, quarantined: false };
+
+  const reason = String(options.reason || "تخلف امنیتی").slice(0, 500);
+  const source = String(options.source || "unknown");
+  const warning = await addWarning(env, chatId, userId, actorId, reason);
+  const warningCount = Number(warning?.count || 0);
+  let muted = false;
+  let banned = false;
+  let quarantined = Boolean(await getQuarantine(env, chatId, userId));
+
+  // warningThreshold is the minimum active-warning count at which automatic
+  // escalation is allowed. Below it, the violation is recorded but no
+  // automatic mute/quarantine/ban action is taken.
+  if (warningCount >= cfg.warningThreshold) {
+    // If pre-ban quarantine is enabled, reaching the ban threshold places the
+    // user in quarantine first. A later violation while already quarantined
+    // can then reach the actual ban action.
+    if (cfg.banAtWarnings > 0 && warningCount >= cfg.banAtWarnings) {
+      if (cfg.quarantineBeforeBan && !quarantined) {
+        try {
+          quarantined = await setQuarantine(env, chatId, userId, actorId, Math.max(60, cfg.muteSeconds), reason);
+        } catch (error) {
+          console.error("Unified moderation quarantine:", getSafeErrorMessage(error));
+        }
+        if (quarantined) {
+          await addAuditLog(env, chatId, actorId, "unified_moderation", userId, {
+            action: "quarantine_before_ban", reason, warnings: warningCount,
+            seconds: Math.max(60, cfg.muteSeconds), source
+          });
+        }
+      } else if (quarantined || !cfg.quarantineBeforeBan) {
+        try {
+          banned = await banUserWithLog(env, chatId, userId, actorId, reason || "تکرار تخلف امنیتی");
+        } catch (error) {
+          console.error("Unified moderation ban:", getSafeErrorMessage(error));
+        }
+        if (banned) {
+          await addAuditLog(env, chatId, actorId, "unified_moderation", userId, {
+            action: "ban", reason, warnings: warningCount, source
+          });
+        }
+      }
+    }
+
+    // Only mute when the ban-stage logic did not already handle this
+    // violation. This preserves the configured mute threshold and avoids
+    // double actions on the same event.
+    if (!banned && !quarantined && warningCount >= cfg.muteAtWarnings && cfg.muteSeconds > 0) {
+      muted = await muteUser(env, chatId, userId, cfg.muteSeconds);
+      if (muted) {
+        await addAuditLog(env, chatId, actorId, "unified_moderation", userId, {
+          action: "mute", reason, warnings: warningCount,
+          seconds: cfg.muteSeconds, source
+        });
+      }
+    }
+  }
+
+  if (muted || banned || quarantined) {
+    try {
+      await writeOwnerEventLog(env, {
+        chatId, actorId, targetId: userId, type: "security",
+        action: banned ? "اقدام یکپارچه: بن" : quarantined ? "اقدام یکپارچه: قرنطینه" : "اقدام یکپارچه: میوت",
+        details: `${source}: ${reason.slice(0, 300)}`
+      });
+    } catch {}
+  }
+
+  return { handled: true, warnings: warningCount, muted, banned, quarantined, source };
+}
+
 /* =========================
    RESET WARNINGS
 ========================= */
@@ -9116,7 +9253,8 @@ function warningHistoryText(
     "",
     `👤 کاربر: <b>${name}</b>`,
     `🆔 شناسه: <code>${user.id}</code>`,
-    `📊 تعداد فعلی: <b>${data.count}</b>`,
+    `📊 اخطار فعال: <b>${data.count}</b>`,
+    `🎯 امتیاز تخلف: <b>${Number(data.points || data.count || 0)}</b>`,
     ""
   ];
 
@@ -9149,7 +9287,7 @@ function warningHistoryText(
         item.reason
       )} — ${formatEventDate(
         item.timestamp
-      )}`
+      )}${item.expiresAt ? ` — ${Number(item.expiresAt) > Date.now() ? "فعال" : "منقضی"}` : ""}`
     );
   }
 
@@ -9872,6 +10010,25 @@ async function configureWarnings(
   if (
     Number.isFinite(
       Number(
+        options.expirySeconds
+      )
+    )
+  ) {
+    settings.warningExpirySeconds =
+      Math.max(
+        3600,
+        Math.min(
+          30 * 24 * 60 * 60,
+          Number(
+            options.expirySeconds
+          )
+        )
+      );
+  }
+
+  if (
+    Number.isFinite(
+      Number(
         options.muteSeconds
       )
     )
@@ -10162,7 +10319,8 @@ async function showWarningPanel(
         settings.warningMuteSeconds ||
         3600
       )
-    }</b> ثانیه`
+    }</b> ثانیه`,
+    `⌛ اعتبار اخطار: <b>${Math.round(Number(settings.warningExpirySeconds || 604800) / 86400)}</b> روز`
   ].join("\n");
 
   await sendMessage(
@@ -11110,12 +11268,70 @@ const BOT_COMMANDS = {
     "امنیت"
   ],
 
+  groupLock: [
+    "/group_lock",
+    "/group-lock",
+    "/قفل_گپ",
+    "قفل گپ",
+    "قفل_گپ",
+    "قفل گپ"
+  ],
+
+  groupOpen: [
+    "/group_open",
+    "/group-open",
+    "/گپ_باز",
+    "گپ باز",
+    "گپ_باز"
+  ],
+
   userManagement: [
     "/usermanagement",
     "/مدیریت_کاربر",
     "/مدیریت_کاربران",
     "مدیریت کاربر",
     "مدیریت کاربران"
+  ],
+
+  userPermissions: [
+    "/userpermissions",
+    "/اختیارات",
+    "اختیارات",
+    "اختیارات کاربر"
+  ],
+
+  addAdmin: [
+    "/addadmin",
+    "/افزودن_مدیر",
+    "افزودن مدیر",
+    "افزودن_مدیر",
+    "افزودن مدیر گروه"
+  ],
+
+  addOwner: [
+    "/addowner",
+    "/افزودن_به_مالک_روبات",
+    "افزودن به مالک روبات",
+    "افزودن_به_مالک_روبات"
+  ],
+
+  ownerPanel: [
+    "/ownerpanel",
+    "/مالک",
+    "/پنل_مالک",
+    "/پنل_مالکان",
+    "پنل مالک",
+    "پنل مالکان",
+    "پنل مالکان ربات",
+    "پنل مالک ربات"
+  ],
+
+  badWords: [
+    "/badwords",
+    "/کلمات_ممنوعه",
+    "کلمات ممنوعه",
+    "کلمات_ممنوعه",
+    "کلماتممنوعه"
   ]
 
 };
@@ -11871,7 +12087,8 @@ function userPermissionFields() {
     voice_notes: "can_send_voice_notes",
     polls: "can_send_polls",
     other: "can_send_other_messages",
-    animation: "can_send_other_messages"
+    animation: "can_send_other_messages",
+    webpreviews: "can_add_web_page_previews"
   };
 }
 
@@ -11985,7 +12202,9 @@ async function handleUserManagementNaturalCommand(message, env) {
     ["اجازه فایل", "documents", true], ["ممنوع فایل", "documents", false],
     ["اجازه ویس", "voice_notes", true], ["ممنوع ویس", "voice_notes", false],
     ["اجازه آهنگ", "audios", true], ["ممنوع آهنگ", "audios", false],
-    ["اجازه نظرسنجی", "polls", true], ["ممنوع نظرسنجی", "polls", false]
+    ["اجازه نظرسنجی", "polls", true], ["ممنوع نظرسنجی", "polls", false],
+    ["اجازه پیشنمایش لینک", "webpreviews", true], ["ممنوع پیشنمایش لینک", "webpreviews", false],
+    ["اجازه پیش‌نمایش لینک", "webpreviews", true], ["ممنوع پیش‌نمایش لینک", "webpreviews", false]
   ];
   const found = patterns.find(([prefix]) => text === prefix || text.startsWith(prefix + " "));
   const rateMatch = text.match(/^(?:محدودیت پیام|محدودیت کاربر)\s+(.+)$/);
@@ -12037,6 +12256,1301 @@ async function handleUserManagementNaturalCommand(message, env) {
    COMMAND ROUTER
 ========================= */
 
+
+
+/* ============================================================
+   TAG COMMAND — tracked members + administrators
+============================================================ */
+
+async function handleTagCommand(message, env, parsed) {
+  if (!message?.chat || parsed?.command !== "tag") return false;
+
+  const chatId = message.chat.id;
+  if (message.chat.type !== "group" && message.chat.type !== "supergroup") {
+    await sendMessage(env, chatId, "⚠️ دستور تگ فقط داخل گروه قابل استفاده است.");
+    return true;
+  }
+
+  if (!(await requireAdmin(message, env))) {
+    await sendMessage(env, chatId, "⛔ فقط مدیران می‌توانند از دستور تگ استفاده کنند.");
+    return true;
+  }
+
+  const args = Array.isArray(parsed.args) ? parsed.args : [];
+  const requested = Number(args[0] || 0);
+  const limit = requested === 300 ? 300 : requested === 100 ? 100 : 0;
+
+  let admins = [];
+  try {
+    const result = await telegram("getChatAdministrators", env, { chat_id: chatId });
+    admins = Array.isArray(result?.result) ? result.result : [];
+  } catch (error) {
+    console.error("Tag administrators:", error?.message || String(error));
+  }
+
+  const profiles = [];
+  try {
+    const page = await kvList(env, `user:${chatId}:`, 1000);
+    for (const item of page?.keys || []) {
+      const profile = await kvGet(env, item.name, null);
+      if (!profile || profile.isBot) continue;
+      const id = Number(profile.id || item.name.split(":").pop());
+      if (!id) continue;
+      profiles.push({ ...profile, id });
+    }
+  } catch (error) {
+    console.error("Tag profiles:", error?.message || String(error));
+  }
+
+  const byId = new Map();
+  for (const profile of profiles) byId.set(Number(profile.id), profile);
+
+  for (const admin of admins) {
+    const user = admin?.user;
+    if (!user || user.is_bot) continue;
+    const id = Number(user.id);
+    if (!id) continue;
+    const old = byId.get(id) || {};
+    byId.set(id, {
+      ...old,
+      id,
+      firstName: user.first_name || old.firstName || old.first_name || "کاربر",
+      lastName: user.last_name || old.lastName || old.last_name || "",
+      username: user.username || old.username || "",
+      lastSeen: Number(old.lastSeen || 0)
+    });
+  }
+
+  const adminIds = new Set(admins.map(x => Number(x?.user?.id)).filter(Boolean));
+  const members = [...byId.values()].sort((a, b) => {
+    const aAdmin = adminIds.has(Number(a.id));
+    const bAdmin = adminIds.has(Number(b.id));
+    if (aAdmin !== bAdmin) return aAdmin ? -1 : 1;
+    return Number(b.lastSeen || 0) - Number(a.lastSeen || 0);
+  });
+
+  const selected = limit ? members.slice(0, limit) : members.filter(x => adminIds.has(Number(x.id)));
+
+  if (!selected.length) {
+    await sendMessage(env, chatId, "⚠️ هنوز عضو قابل تگی برای این گروه ثبت نشده است.");
+    return true;
+  }
+
+  const title = limit ? `📢 <b>تگ ${limit} نفر</b>\
+\
+` : "📢 <b>تگ مدیران</b>\
+\
+";
+  const mentions = selected.map(user => {
+    const name = escapeHTML([user.firstName || user.first_name, user.lastName || user.last_name].filter(Boolean).join(" ").trim() || user.username || "کاربر");
+    return `<a href="tg://user?id=${Number(user.id)}">${name}</a>`;
+  });
+
+  const chunks = [];
+  let current = title;
+  for (const mention of mentions) {
+    const piece = `${mention} `;
+    if ((current + piece).length > 3900) {
+      chunks.push(current.trim());
+      current = piece;
+    } else {
+      current += piece;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+
+  for (const chunk of chunks) {
+    await sendMessage(env, chatId, chunk, { parse_mode: "HTML" });
+  }
+
+  return true;
+}
+
+async function handleGroupLockCommand(message, env, mode) {
+  const chat = message?.chat;
+  if (!chat || !["group", "supergroup"].includes(chat.type)) {
+    await sendMessage(env, chat?.id, "⛔ این دستور فقط داخل گروه قابل استفاده است.");
+    return true;
+  }
+
+  const userId = Number(message?.from?.id || 0);
+  if (!isOwner(userId)) {
+    await sendMessage(env, chat.id, "⛔ فقط مالک ربات می‌تواند گپ را قفل یا باز کند.");
+    return true;
+  }
+
+  const permissions = mode === "lock"
+    ? {
+        can_send_messages: false,
+        can_send_audios: false,
+        can_send_documents: false,
+        can_send_photos: false,
+        can_send_videos: false,
+        can_send_video_notes: false,
+        can_send_voice_notes: false,
+        can_send_polls: false,
+        can_send_other_messages: false,
+        can_add_web_page_previews: false
+      }
+    : {
+        can_send_messages: true,
+        can_send_audios: true,
+        can_send_documents: true,
+        can_send_photos: true,
+        can_send_videos: true,
+        can_send_video_notes: true,
+        can_send_voice_notes: true,
+        can_send_polls: true,
+        can_send_other_messages: true,
+        can_add_web_page_previews: true
+      };
+
+  try {
+    await telegram("setChatPermissions", env, {
+      chat_id: chat.id,
+      permissions
+    });
+
+    await kvPut(env, `group-lock:${chat.id}`, {
+      locked: mode === "lock",
+      updatedAt: Date.now(),
+      updatedBy: userId
+    });
+
+    await sendMessage(
+      env,
+      chat.id,
+      mode === "lock"
+        ? "🔒 <b>گپ قفل شد.</b>\n\nارسال پیام برای اعضای عادی متوقف شد. مدیران همچنان دسترسی مدیریتی خود را دارند."
+        : "🔓 <b>گپ باز شد.</b>\n\nارسال پیام برای اعضای گروه دوباره فعال شد."
+    );
+  } catch (error) {
+    console.error("Group lock/open:", error);
+    await sendMessage(env, chat.id, "❌ تغییر وضعیت گپ انجام نشد. مطمئن شوید ربات دسترسی لازم برای محدود کردن اعضا را دارد.");
+  }
+
+  return true;
+}
+
+
+
+function managedPermissionKeyboard(chatId, userId, permissions) {
+  const rows = [];
+  const add = (label, key) => {
+    const on = permissions?.[key] !== false;
+    rows.push([inlineButton(`${on ? "🟢" : "🔴"} ${label}`, `um:${userId}:${key}:${on ? "off" : "on"}`)]);
+  };
+  add("ارسال پیام", "messages");
+  add("عکس", "photos");
+  add("ویدیو", "videos");
+  add("گیف / استیکر", "animation");
+  add("فایل", "documents");
+  add("ویس", "voice_notes");
+  add("موزیک", "audios");
+  add("نظرسنجی", "polls");
+  add("ویدیو نوت", "video_notes");
+  add("سایر محتوا", "other");
+  add("پیش‌نمایش لینک", "webpreviews");
+  rows.push([
+    inlineButton("🔄 بروزرسانی", `umview:${chatId}:${userId}`),
+    inlineButton("⬅️ برگشت", "admin:main")
+  ]);
+  return { inline_keyboard: rows };
+}
+
+function managedPermissionSnapshot(member) {
+  const p = member || {};
+  return {
+    messages: p.can_send_messages !== false,
+    audios: p.can_send_audios !== false,
+    documents: p.can_send_documents !== false,
+    photos: p.can_send_photos !== false,
+    videos: p.can_send_videos !== false,
+    video_notes: p.can_send_video_notes !== false,
+    voice_notes: p.can_send_voice_notes !== false,
+    polls: p.can_send_polls !== false,
+    other: p.can_send_other_messages !== false,
+    animation: p.can_send_other_messages !== false,
+    webpreviews: p.can_add_web_page_previews !== false
+  };
+}
+
+async function showManagedUserPermissions(message, env, targetId) {
+  const chat = message?.chat;
+  if (!chat || !["group", "supergroup"].includes(chat.type)) {
+    await sendMessage(env, chat?.id, "⚠️ اختیارات فقط داخل گروه قابل استفاده است.");
+    return true;
+  }
+  const actor = Number(message?.from?.id || 0);
+  if (!await isAdmin(env, chat.id, actor)) {
+    await sendMessage(env, chat.id, "⛔ فقط مدیران گروه می‌توانند اختیارات کاربران را تنظیم کنند.");
+    return true;
+  }
+
+  let id = Number(targetId || message?.reply_to_message?.from?.id || 0);
+  if (!id) {
+    await sendMessage(env, chat.id, "⚠️ برای استفاده از «اختیارات»، روی پیام کاربر ریپلای کن.");
+    return true;
+  }
+  if (isProtectedUser(id)) {
+    await sendMessage(env, chat.id, "⛔ دسترسی این کاربر قابل تغییر نیست.");
+    return true;
+  }
+
+  let member;
+  try {
+    const result = await telegram("getChatMember", env, { chat_id: chat.id, user_id: id });
+    member = result?.result;
+  } catch (e) {
+    await sendMessage(env, chat.id, "❌ اطلاعات کاربر از تلگرام دریافت نشد.");
+    return true;
+  }
+  if (!member?.user) {
+    await sendMessage(env, chat.id, "⚠️ کاربر در این گروه پیدا نشد.");
+    return true;
+  }
+  if (["administrator", "creator"].includes(member.status)) {
+    await sendMessage(env, chat.id, "⛔ اختیارات مدیران و مالک گروه از طریق این بخش قابل محدودسازی نیست.");
+    return true;
+  }
+
+  const u = member.user;
+  const name = escapeHTML([u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || "کاربر");
+  const permissions = managedPermissionSnapshot(member);
+  const lines = [
+    `👤 <b>اختیارات کاربر</b>`,
+    `نام: <b>${name}</b>`,
+    `شناسه: <code>${id}</code>`,
+    `وضعیت: <b>${escapeHTML(member.status || "member")}</b>`,
+    "",
+    "🟢 = مجاز | 🔴 = ممنوع",
+    "با دکمه‌های زیر هر دسترسی را جداگانه تغییر بده."
+  ];
+  await sendMessage(env, chat.id, lines.join("\n"), {
+    reply_markup: managedPermissionKeyboard(chat.id, id, permissions)
+  });
+  return true;
+}
+
+async function handleUserPermissionsCommand(message, env) {
+  const parsed = parseBotCommand(message?.text);
+  if (!parsed || parsed.command !== "userPermissions") return false;
+  return await showManagedUserPermissions(message, env, message?.reply_to_message?.from?.id || 0);
+}
+
+async function handleUserPermissionsCallback(callback, env) {
+  const data = String(callback?.data || "");
+  if (!data.startsWith("umview:")) return false;
+  const [, chatId, userId] = data.split(":");
+  const actor = Number(callback?.from?.id || 0);
+  if (!chatId || !userId || !await isAdmin(env, Number(chatId), actor)) {
+    await answerCallback(env, callback?.id, "⛔ فقط مدیران دسترسی دارند.");
+    return true;
+  }
+  const result = await telegram("getChatMember", env, { chat_id: Number(chatId), user_id: Number(userId) });
+  const member = result?.result;
+  if (!member?.user) {
+    await answerCallback(env, callback?.id, "⚠️ کاربر پیدا نشد.");
+    return true;
+  }
+  const permissions = managedPermissionSnapshot(member);
+  const u = member.user;
+  const name = escapeHTML([u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || "کاربر");
+  await telegram("editMessageText", env, {
+    chat_id: Number(chatId), message_id: callback.message.message_id,
+    text: [`👤 <b>اختیارات کاربر</b>`,`نام: <b>${name}</b>`,`شناسه: <code>${userId}</code>`,"","🟢 = مجاز | 🔴 = ممنوع"].join("\n"),
+    parse_mode: "HTML", reply_markup: managedPermissionKeyboard(Number(chatId), Number(userId), permissions)
+  });
+  await answerCallback(env, callback?.id, "🔄 بروزرسانی شد.");
+  return true;
+}
+
+
+/* ============================================================
+   OWNER PANEL — PRIVATE OWNER CONTROL HUB
+============================================================ */
+
+function buildOwnerPanelKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        inlineButton("👑 مدیریت مالکان", "ownerpanel:owners"),
+        inlineButton("🏢 مدیریت گروه‌ها", "ownerpanel:groups")
+      ],
+      [
+        inlineButton("🛡️ مرکز امنیت", "ownerpanel:security"),
+        inlineButton("📊 گزارش امنیتی جامع", "ownerpanel:securityreport")
+      ],
+      [
+        inlineButton("👤 افزودن مدیر", "ownerpanel:addadmin"),
+        inlineButton("➕ درخواست افزودن مالک", "ownerpanel:addowner")
+      ],
+      [
+        inlineButton("📊 وضعیت ربات", "ownerpanel:status"),
+        inlineButton("🔄 بروزرسانی", "ownerpanel:refresh")
+      ],
+      [
+        inlineButton("🏠 پنل اصلی", "ownerpanel:main")
+      ]
+    ]
+  };
+}
+
+async function showOwnerPanel(env, userId, messageId = null) {
+  const id = Number(userId || 0);
+  if (!isOwner(id)) return false;
+
+  const text = [
+    "👑 <b>پنل مالکان ربات</b>",
+    "",
+    "از این بخش مدیریت قابلیت‌های مخصوص مالک انجام می‌شود.",
+    "",
+    "🛡️ دسترسی: فقط مالکان ربات"
+  ].join("\\n");
+
+  const payload = {
+    chat_id: id,
+    text,
+    parse_mode: "HTML",
+    reply_markup: buildOwnerPanelKeyboard()
+  };
+
+  if (messageId) {
+    payload.message_id = messageId;
+    try {
+      await telegram("editMessageText", env, payload);
+      return true;
+    } catch {}
+  }
+
+  await telegram("sendMessage", env, payload);
+  return true;
+}
+
+async function registerOwnerManagedGroup(env, chat) {
+  if (!chat || !["group", "supergroup"].includes(chat.type)) return;
+  const key = `managed_group:${chat.id}`;
+  const current = await kvGet(env, key, null);
+  const data = {
+    chatId: Number(chat.id),
+    title: String(chat.title || "گروه"),
+    type: String(chat.type),
+    updatedAt: Date.now(),
+    ...(current || {})
+  };
+  data.title = String(chat.title || data.title || "گروه");
+  data.updatedAt = Date.now();
+  await kvPut(env, key, data);
+}
+
+async function getManagedGroups(env) {
+  const page = await kvList(env, "managed_group:", 1000);
+  const groups = [];
+  for (const item of page?.keys || []) {
+    const data = await kvGet(env, item.name, null);
+    if (data?.chatId) groups.push(data);
+  }
+  groups.sort((a, b) => String(a.title).localeCompare(String(b.title), "fa"));
+  return groups;
+}
+
+function ownerGroupListKeyboard(groups) {
+  const rows = [];
+  for (const group of groups.slice(0, 50)) {
+    rows.push([inlineButton(`🏢 ${String(group.title || "گروه").slice(0, 50)}`, `ownerpanel:group:${group.chatId}`)]);
+  }
+  rows.push([inlineButton("🔄 بروزرسانی", "ownerpanel:groups"), inlineButton("⬅️ برگشت", "ownerpanel:main")]);
+  return { inline_keyboard: rows };
+}
+
+async function showOwnerGroupsPanel(env, callback) {
+  const groups = await getManagedGroups(env);
+  const text = groups.length
+    ? `🏢 <b>مدیریت گروه‌ها</b>\n\nگروه‌های ثبت‌شده: <b>${groups.length}</b>\n\nیک گروه را انتخاب کن:`
+    : "🏢 <b>مدیریت گروه‌ها</b>\n\nهنوز گروهی ثبت نشده است.\n\nبا ارسال پیام در یک گروه، آن گروه در این فهرست ثبت می‌شود.";
+  await telegram("editMessageText", env, {
+    chat_id: callback.from.id,
+    message_id: callback.message.message_id,
+    text,
+    parse_mode: "HTML",
+    reply_markup: ownerGroupListKeyboard(groups)
+  });
+  await answerCallback(env, callback.id, "فهرست گروه‌ها");
+  return true;
+}
+
+async function showOwnerGroupDetails(env, callback, chatId) {
+  const group = await kvGet(env, `managed_group:${chatId}`, null);
+  if (!group) {
+    await answerCallback(env, callback.id, "⚠️ گروه ثبت نشده است.", true);
+    return true;
+  }
+  const lock = await kvGet(env, `group-lock:${chatId}`, null);
+  const bad = await kvGet(env, `badwords:${chatId}`, null);
+  const stats = await getChatStats(env, chatId);
+  const settings = await getSettings(env, chatId);
+  const lockState = lock?.locked ? "🔒 قفل" : "🔓 باز";
+  const badState = bad?.enabled ? "🟢 روشن" : "🔴 خاموش";
+  const lines = [
+    `🏢 <b>${escapeHTML(group.title || "گروه")}</b>`,
+    `🆔 <code>${chatId}</code>`,
+    "",
+    `🔐 وضعیت گپ: <b>${lockState}</b>`,
+    `🚫 کلمات ممنوعه: <b>${badState}</b>`,
+    `🛡️ قفل رسانه‌ای: <b>${settings ? "تنظیم‌شده" : "نامشخص"}</b>`,
+    `💬 پیام‌ها: <b>${Number(stats.messages || 0).toLocaleString("fa-IR")}</b>`,
+    `⚠️ هشدارها: <b>${Number(stats.warnings || 0).toLocaleString("fa-IR")}</b>`,
+    `🚫 بن‌ها: <b>${Number(stats.bans || 0).toLocaleString("fa-IR")}</b>`,
+    "",
+    "از این بخش می‌توانی وضعیت گروه را ببینی؛ تغییرات اصلی همچنان با سیستم‌های مدیریتی موجود انجام می‌شوند."
+  ];
+  await telegram("editMessageText", env, {
+    chat_id: callback.from.id,
+    message_id: callback.message.message_id,
+    text: lines.join("\n"),
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: [
+      [inlineButton("🔄 بروزرسانی", `ownerpanel:group:${chatId}`)],
+      [inlineButton("📊 آمار گروه", `ownerstats:group:${chatId}`), inlineButton("📈 گزارش مدیریتی", `ownerstats:report:${chatId}`)],
+      [inlineButton("📋 گزارش رویدادها", `ownerlog:all:${chatId}`)],
+      [inlineButton("👋 تنظیمات خوشامدگویی", `ownerpanel:welcome:${chatId}`)],
+      [inlineButton("⬅️ فهرست گروه‌ها", "ownerpanel:groups"), inlineButton("🏠 پنل اصلی", "ownerpanel:main")]
+    ]}
+  });
+  await answerCallback(env, callback.id, "وضعیت گروه");
+  return true;
+}
+
+
+function ownerSecurityStateText(value) {
+  return value ? "🟢 فعال" : "🔴 خاموش";
+}
+
+
+async function showOwnerSecurityReport(env, callback) {
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await answerCallback(env, callback?.id, "⛔ فقط مالک ربات دسترسی دارد.", true);
+    return true;
+  }
+
+  const groups = await getManagedGroups(env);
+  const totals = {
+    groups: groups.length, messages: 0, warnings: 0, mutes: 0, bans: 0,
+    quarantines: 0, deletedMessages: 0, linkViolations: 0, spamViolations: 0,
+    enabledAntiSpam: 0, enabledAntiFlood: 0, enabledAntiLink: 0,
+    enabledAds: 0, enabledQuarantine: 0, lockedGroups: 0
+  };
+  const rows = [];
+
+  for (const group of groups.slice(0, 50)) {
+    const chatId = Number(group.chatId || 0);
+    if (!chatId) continue;
+    const [stats, security, links, lock] = await Promise.all([
+      getChatStats(env, chatId),
+      getSecuritySettings(env, chatId),
+      getLinkConfig(env, chatId),
+      kvGet(env, `group-lock:${chatId}`, null)
+    ]);
+
+    totals.messages += Number(stats.messages || 0);
+    totals.warnings += Number(stats.warnings || 0);
+    totals.mutes += Number(stats.mutes || 0);
+    totals.bans += Number(stats.bans || 0);
+    totals.quarantines += Number(stats.quarantines || 0);
+    totals.deletedMessages += Number(stats.deletedMessages || 0);
+    totals.linkViolations += Number(stats.linkViolations || 0);
+    totals.spamViolations += Number(stats.spamViolations || 0);
+    if (security?.antiSpam || security?.antiFlood) {}
+    if (security?.antiFlood) totals.enabledAntiFlood++;
+    if (security?.antiSpam) totals.enabledAntiSpam++;
+    if (links?.enabled) totals.enabledAntiLink++;
+    if (links?.advertisementEnabled) totals.enabledAds++;
+    if (security?.quarantineEnabled) totals.enabledQuarantine++;
+    if (lock?.locked) totals.lockedGroups++;
+
+    const status = [
+      security?.antiSpam ? "🛑" : "⚪",
+      security?.antiFlood ? "🌊" : "⚪",
+      links?.enabled ? "🔗" : "⚪",
+      links?.advertisementEnabled ? "🚫" : "⚪",
+      security?.quarantineEnabled ? "🔒" : "⚪",
+      lock?.locked ? "🔐" : "🔓"
+    ].join(" ");
+    rows.push(`• <b>${escapeHTML(String(group.title || "گروه").slice(0, 48))}</b> — ${status}\n  ⚠️ ${Number(stats.warnings || 0)} | 🔇 ${Number(stats.mutes || 0)} | 🚫 ${Number(stats.bans || 0)} | 🔒 ${Number(stats.quarantines || 0)}`);
+  }
+
+  const text = [
+    "📊 <b>گزارش امنیتی جامع مالک</b>",
+    "",
+    `🏢 گروه‌های مدیریت‌شده: <b>${totals.groups}</b>`,
+    `🛡️ فعال بودن قابلیت‌ها: ضداسپم <b>${totals.enabledAntiSpam}</b> | ضدفلود <b>${totals.enabledAntiFlood}</b> | ضدلینک <b>${totals.enabledAntiLink}</b>`,
+    `🚫 ضدتبلیغ: <b>${totals.enabledAds}</b> | 🔒 قرنطینه: <b>${totals.enabledQuarantine}</b> | 🔐 گپ قفل: <b>${totals.lockedGroups}</b>`,
+    "",
+    "📈 <b>مجموع رویدادها</b>",
+    `💬 پیام: <b>${totals.messages.toLocaleString("fa-IR")}</b>`,
+    `⚠️ اخطار: <b>${totals.warnings.toLocaleString("fa-IR")}</b>`,
+    `🔇 میوت: <b>${totals.mutes.toLocaleString("fa-IR")}</b>`,
+    `🚫 بن: <b>${totals.bans.toLocaleString("fa-IR")}</b>`,
+    `🔒 قرنطینه: <b>${totals.quarantines.toLocaleString("fa-IR")}</b>`,
+    `🗑️ حذف پیام: <b>${totals.deletedMessages.toLocaleString("fa-IR")}</b>`,
+    `🔗 تخلف لینک: <b>${totals.linkViolations.toLocaleString("fa-IR")}</b>`,
+    `🌊 تخلف اسپم/فلود: <b>${totals.spamViolations.toLocaleString("fa-IR")}</b>`,
+    "",
+    "🧭 <b>وضعیت گروه‌ها</b>",
+    rows.length ? rows.join("\n\n") : "هنوز گروهی ثبت نشده است.",
+    groups.length > 50 ? `\n⚠️ نمایش وضعیت ۵۰ گروه اول از ${groups.length} گروه.` : "",
+    "",
+    `🔄 بروزرسانی: <b>${new Date().toLocaleString("fa-IR", { timeZone: "Asia/Tehran" })}</b>`
+  ].join("\n");
+
+  await telegram("editMessageText", env, {
+    chat_id: actor,
+    message_id: callback.message.message_id,
+    text,
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: [
+      [inlineButton("🔄 بروزرسانی", "ownerpanel:securityreport")],
+      [inlineButton("🛡️ مرکز امنیت", "ownerpanel:security"), inlineButton("🏠 پنل اصلی", "ownerpanel:main")]
+    ]}
+  });
+  await answerCallback(env, callback.id, "📊 گزارش امنیتی بروزرسانی شد.");
+  return true;
+}
+
+async function showOwnerSecurityPanel(env, callback) {
+  const groups = await getManagedGroups(env);
+  const rows = [];
+  for (const group of groups.slice(0, 50)) {
+    rows.push([inlineButton(`🛡️ ${String(group.title || "گروه").slice(0, 45)}`, `ownerpanel:securitygroup:${group.chatId}`)]);
+  }
+  rows.push([inlineButton("🔄 بروزرسانی", "ownerpanel:security"), inlineButton("⬅️ پنل اصلی", "ownerpanel:main")]);
+
+  const text = groups.length
+    ? `🛡️ <b>مرکز امنیت ربات</b>\n\nتعداد گروه‌های مدیریت‌شده: <b>${groups.length}</b>\n\nگروه موردنظر را برای کنترل امنیت انتخاب کن.`
+    : "🛡️ <b>مرکز امنیت ربات</b>\n\nهنوز گروهی برای مدیریت ثبت نشده است.";
+
+  await telegram("editMessageText", env, {
+    chat_id: callback.from.id,
+    message_id: callback.message.message_id,
+    text,
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: rows }
+  });
+  await answerCallback(env, callback.id, "مرکز امنیت");
+  return true;
+}
+
+async function showOwnerSecurityGroupPanel(env, callback, chatId) {
+  const group = await kvGet(env, `managed_group:${chatId}`, null);
+  if (!group) {
+    await answerCallback(env, callback.id, "⚠️ گروه ثبت نشده است.", true);
+    return true;
+  }
+
+  const antispam = await getAntiSpamConfig(env, chatId);
+  const links = await getLinkConfig(env, chatId);
+  const bad = await kvGet(env, `badwords:${chatId}`, null);
+  const lock = await kvGet(env, `group-lock:${chatId}`, null);
+  const security = await getSecuritySettings(env, chatId);
+
+  const text = [
+    `🛡️ <b>مرکز امنیت</b> — ${escapeHTML(group.title || "گروه")}`,
+    `🆔 <code>${chatId}</code>`,
+    "",
+    `🛑 ضداسپم: <b>${ownerSecurityStateText(antispam?.enabled)}</b>`,
+    `🌊 ضدفلود: <b>${ownerSecurityStateText(security?.antiFlood)}</b>`,
+    `🎚️ شدت ضدفلود: <b>${escapeHTML(String(antispam?.intensity || "medium"))}</b>`,
+    `⚙️ واکنش فلود: <b>${escapeHTML(String(antispam?.floodAction || "escalate"))}</b>`,
+    `🔗 ضدلینک: <b>${ownerSecurityStateText(links?.enabled)}</b>`,
+    `🚫 ضدتبلیغ: <b>${ownerSecurityStateText(links?.advertisementEnabled)}</b>`,
+    `🚯 دعوت‌نامه: <b>${ownerSecurityStateText(links?.blockInviteLinks)}</b>`,
+    `🌐 دامنه ناشناخته: <b>${ownerSecurityStateText(links?.allowUnknownDomains)}</b>`,
+    `⚠️ واکنش دعوت‌نامه: <b>${escapeHTML(String(links?.severeInviteAction || "escalate"))}</b>`,
+    `🔒 قرنطینه: <b>${ownerSecurityStateText(security?.quarantineEnabled)}</b>`,
+    `🤖 قرنطینه خودکار: <b>${ownerSecurityStateText(security?.quarantineAuto)}</b>`,
+    `🚫 کلمات ممنوعه: <b>${ownerSecurityStateText(bad?.enabled)}</b>`,
+    `🔒 قفل گپ: <b>${lock?.locked ? "🔒 فعال" : "🔓 خاموش"}</b>`,
+    `👮 محافظت از مدیران: <b>${ownerSecurityStateText(security?.protectAdmins)}</b>`,
+    `📋 ثبت لاگ: <b>${ownerSecurityStateText(security?.logActions)}</b>`
+  ].join("\n");
+
+  const keyboard = { inline_keyboard: [
+    [inlineButton(antispam?.enabled ? "🔴 خاموش کردن ضداسپم" : "🟢 فعال کردن ضداسپم", `ownersec:antispam:${chatId}`)],
+    [inlineButton(links?.enabled ? "🔴 خاموش کردن ضدلینک" : "🟢 فعال کردن ضدلینک", `ownersec:links:${chatId}`)],
+    [inlineButton(links?.advertisementEnabled ? "🔴 خاموش کردن ضدتبلیغ" : "🟢 فعال کردن ضدتبلیغ", `ownersec:ads:${chatId}`), inlineButton(links?.blockInviteLinks ? "🔴 بستن دعوت‌نامه" : "🟢 اجازه دعوت‌نامه", `ownersec:invites:${chatId}`)],
+    [inlineButton(links?.allowUnknownDomains ? "🔴 بستن دامنه‌های ناشناخته" : "🟢 اجازه دامنه‌های شناخته‌شده", `ownersec:unknownlinks:${chatId}`), inlineButton("⚙️ واکنش دعوت‌نامه", `ownersec:inviteaction:${chatId}`)],
+    [inlineButton(security?.quarantineEnabled ? "🔴 خاموش کردن قرنطینه" : "🟢 فعال کردن قرنطینه", `ownersec:quarantine:${chatId}`), inlineButton(security?.quarantineAuto ? "🔴 خاموش کردن قرنطینه خودکار" : "🟢 فعال کردن قرنطینه خودکار", `ownersec:quarantineauto:${chatId}`)],
+    [inlineButton(bad?.enabled ? "🔴 خاموش کردن کلمات ممنوعه" : "🟢 فعال کردن کلمات ممنوعه", `ownersec:badwords:${chatId}`)],
+    [inlineButton(lock?.locked ? "🔓 باز کردن گپ" : "🔒 قفل کردن گپ", `ownersec:lock:${chatId}`)],
+    [inlineButton(security?.antiFlood ? "🔴 خاموش کردن ضدفلود" : "🟢 فعال کردن ضدفلود", `ownersec:antiflood:${chatId}`)],
+    [inlineButton("🎚️ تغییر شدت ضدفلود", `ownersec:floodmode:${chatId}`)],
+    [inlineButton("⚙️ تنظیمات موتور تخلف", `ownerpanel:moderation:${chatId}`)],
+    [inlineButton(security?.protectAdmins ? "🔴 خاموش کردن محافظت مدیران" : "🟢 فعال کردن محافظت مدیران", `ownersec:protectadmins:${chatId}`)],
+    [inlineButton(security?.logActions ? "🔴 خاموش کردن لاگ" : "🟢 فعال کردن لاگ", `ownersec:logs:${chatId}`)],
+    [inlineButton("🔄 بروزرسانی", `ownerpanel:securitygroup:${chatId}`)],
+    [inlineButton("⬅️ مرکز امنیت", "ownerpanel:security"), inlineButton("🏠 پنل اصلی", "ownerpanel:main")]
+  ]};
+
+  await telegram("editMessageText", env, {
+    chat_id: callback.from.id,
+    message_id: callback.message.message_id,
+    text,
+    parse_mode: "HTML",
+    reply_markup: keyboard
+  });
+  await answerCallback(env, callback.id, "وضعیت امنیتی بروزرسانی شد.");
+  return true;
+}
+
+async function handleOwnerSecurityCallback(callback, env) {
+  const data = String(callback?.data || "");
+  if (!data.startsWith("ownersec:")) return false;
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await answerCallback(env, callback?.id, "⛔ فقط مالک ربات دسترسی دارد.", true);
+    return true;
+  }
+  const parts = data.split(":");
+  const action = parts[1];
+  const chatId = Number(parts[2] || 0);
+  if (!chatId) return true;
+
+  try {
+    if (action === "antispam") {
+      const config = await getAntiSpamConfig(env, chatId);
+      config.enabled = !config.enabled;
+      await saveAntiSpamConfig(env, chatId, config);
+    } else if (action === "links") {
+      const config = await getLinkConfig(env, chatId);
+      config.enabled = !config.enabled;
+      await saveLinkConfig(env, chatId, config);
+    } else if (action === "ads" || action === "invites" || action === "unknownlinks" || action === "inviteaction") {
+      const config = await getLinkConfig(env, chatId);
+      if (action === "ads") config.advertisementEnabled = !Boolean(config.advertisementEnabled);
+      if (action === "invites") config.blockInviteLinks = !Boolean(config.blockInviteLinks);
+      if (action === "unknownlinks") config.allowUnknownDomains = !Boolean(config.allowUnknownDomains);
+      if (action === "inviteaction") {
+        const levels = ["warn", "mute", "ban", "escalate"];
+        const current = levels.indexOf(String(config.severeInviteAction || "escalate"));
+        config.severeInviteAction = levels[(current + 1) % levels.length];
+      }
+      await saveLinkConfig(env, chatId, config);
+    } else if (action === "quarantine" || action === "quarantineauto") {
+      const settings = await getSecuritySettings(env, chatId);
+      if (action === "quarantine") settings.quarantineEnabled = !Boolean(settings.quarantineEnabled);
+      if (action === "quarantineauto") settings.quarantineAuto = !Boolean(settings.quarantineAuto);
+      await saveSecuritySettings(env, chatId, settings);
+    } else if (action === "badwords") {
+      const config = (await kvGet(env, `badwords:${chatId}`, null)) || { enabled: false, words: [] };
+      config.enabled = !config.enabled;
+      await kvPut(env, `badwords:${chatId}`, config);
+    } else if (action === "lock") {
+      const lock = await kvGet(env, `group-lock:${chatId}`, null);
+      const shouldLock = !Boolean(lock?.locked);
+      const permissions = shouldLock ? {
+        can_send_messages: false, can_send_audios: false, can_send_documents: false,
+        can_send_photos: false, can_send_videos: false, can_send_video_notes: false,
+        can_send_voice_notes: false, can_send_polls: false, can_send_other_messages: false,
+        can_add_web_page_previews: false
+      } : {
+        can_send_messages: true, can_send_audios: true, can_send_documents: true,
+        can_send_photos: true, can_send_videos: true, can_send_video_notes: true,
+        can_send_voice_notes: true, can_send_polls: true, can_send_other_messages: true,
+        can_add_web_page_previews: true
+      };
+      await telegram("setChatPermissions", env, { chat_id: chatId, permissions });
+      await kvPut(env, `group-lock:${chatId}`, { locked: shouldLock, updatedAt: Date.now(), updatedBy: actor });
+    } else if (action === "floodmode") {
+      const config = await getAntiSpamConfig(env, chatId);
+      const levels = ["low", "medium", "high"];
+      const current = levels.indexOf(String(config.intensity || "medium"));
+      config.intensity = levels[(current + 1) % levels.length];
+      await saveAntiSpamConfig(env, chatId, config);
+    } else if (["antiflood", "protectadmins", "logs"].includes(action)) {
+      const field = { antiflood: "antiFlood", protectadmins: "protectAdmins", logs: "logActions" }[action];
+      const settings = await getSecuritySettings(env, chatId);
+      settings[field] = !Boolean(settings[field]);
+      await saveSecuritySettings(env, chatId, settings);
+    } else {
+      return true;
+    }
+    await answerCallback(env, callback.id, "✅ وضعیت امنیتی تغییر کرد.");
+  } catch (error) {
+    console.error("Owner security control:", error);
+    await answerCallback(env, callback.id, "❌ تغییر وضعیت انجام نشد.", true);
+  }
+
+  return true;
+}
+
+async function showOwnerListPanel(env, callback) {
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor)) return true;
+
+  const rows = OWNER_IDS.map((id, index) => [
+    inlineButton(`👑 مالک ${index + 1} — ${id}`, `ownerpanel:viewowner:${id}`)
+  ]);
+
+  rows.push([inlineButton("⬅️ برگشت", "ownerpanel:main")]);
+
+  await telegram("editMessageText", env, {
+    chat_id: actor,
+    message_id: callback.message.message_id,
+    text: "👑 <b>مالکان فعلی ربات</b>\n\nاین فهرست مربوط به مالکانی است که در تنظیمات Worker ثبت شده‌اند.",
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: rows }
+  });
+  await answerCallback(env, callback.id, "فهرست مالکان");
+  return true;
+}
+
+
+async function handleOwnerWelcomeTextInput(message, env) {
+  if (message?.chat?.type !== "private") return false;
+  const actor = Number(message?.from?.id || 0);
+  if (!isOwner(actor)) return false;
+
+  const pending = await kvGet(env, `owner_welcome_edit:${actor}`, null);
+  if (!pending?.chatId || !pending?.field) return false;
+
+  const rawText = String(message?.text || "").trim();
+  if (!rawText) {
+    await sendMessage(env, actor, "⚠️ متن خالی قابل ذخیره نیست. دوباره متن را بفرست یا «لغو» را ارسال کن.");
+    return true;
+  }
+  if (["لغو", "cancel", "/cancel"].includes(rawText.toLowerCase())) {
+    await kvDelete(env, `owner_welcome_edit:${actor}`);
+    await sendMessage(env, actor, "❌ ویرایش لغو شد.");
+    return true;
+  }
+
+  const config = await getWelcomeConfig(env, Number(pending.chatId));
+  const field = pending.field === "welcome" ? "welcomeText" : "goodbyeText";
+  config[field] = rawText.slice(0, 1000);
+  await saveWelcomeConfig(env, Number(pending.chatId), config);
+  await kvDelete(env, `owner_welcome_edit:${actor}`);
+  await logEvent(env, Number(pending.chatId), "welcome_text_updated", {
+    userId: actor,
+    key: field
+  });
+
+  await sendMessage(env, actor, pending.field === "welcome"
+    ? "✅ متن خوشامدگویی ذخیره شد."
+    : "✅ متن خداحافظی ذخیره شد."
+  );
+  return true;
+}
+
+async function requestOwnerWelcomeTextEdit(env, callback, chatId, field) {
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await answerCallback(env, callback?.id, "⛔ فقط مالک ربات دسترسی دارد.", true);
+    return true;
+  }
+  if (!["welcome", "goodbye"].includes(field)) return true;
+
+  await kvPut(env, `owner_welcome_edit:${actor}`, {
+    chatId,
+    field,
+    createdAt: Date.now()
+  });
+
+  const title = field === "welcome" ? "خوشامدگویی" : "خداحافظی";
+  const example = field === "welcome"
+    ? "👋 سلام {name}!\n\nبه {group} خوش اومدی 🌹"
+    : "👋 {name} از {group} خارج شد.";
+
+  await telegram("sendMessage", env, {
+    chat_id: actor,
+    text: [
+      `✏️ <b>ویرایش متن ${title}</b>`,
+      "",
+      "متن جدید را در پیام بعدی بفرست.",
+      "",
+      "متغیرهای قابل استفاده:",
+      "<code>{name}</code> نام کامل کاربر",
+      "<code>{first_name}</code> نام",
+      "<code>{last_name}</code> نام خانوادگی",
+      "<code>{username}</code> نام کاربری",
+      "<code>{user_id}</code> شناسه کاربر",
+      "<code>{group}</code> نام گروه",
+      "<code>{chat_id}</code> شناسه گروه",
+      "<code>{mention}</code> منشن کاربر",
+      "",
+      `نمونه: <code>${escapeHTML(example)}</code>`,
+      "",
+      "حداکثر ۱۰۰۰ کاراکتر. برای لغو: «لغو»"
+    ].join("\n"),
+    parse_mode: "HTML",
+    reply_markup: { force_reply: true, input_field_placeholder: `متن ${title} را بنویس...` }
+  });
+  await answerCallback(env, callback?.id, `✏️ متن ${title}`);
+  return true;
+}
+
+async function handleOwnerPanelCommand(message, env) {
+  const parsed = parseBotCommand(message?.text);
+  if (!parsed || parsed.command !== "ownerPanel") return false;
+
+  const actor = Number(message?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await sendMessage(env, message?.chat?.id, "⛔ فقط مالک ربات می‌تواند پنل مالکان را باز کند.");
+    return true;
+  }
+
+  // Owner panel is intentionally private; this prevents accidentally exposing
+  // owner controls inside groups.
+  if (message?.chat?.type !== "private") {
+    await sendMessage(env, message.chat.id, "⚠️ پنل مالکان را در گفت‌وگوی خصوصی با ربات باز کن.");
+    return true;
+  }
+
+  await showOwnerPanel(env, actor);
+  return true;
+}
+
+async function showOwnerUnifiedModerationPanel(env, callback, chatId) {
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor) || !chatId) {
+    await answerCallback(env, callback?.id, "⛔ دسترسی مجاز نیست.", true);
+    return true;
+  }
+  const group = await kvGet(env, `managed_group:${chatId}`, null);
+  if (!group) {
+    await answerCallback(env, callback?.id, "⚠️ گروه ثبت نشده است.", true);
+    return true;
+  }
+  const cfg = await getUnifiedModerationConfig(env, chatId);
+  const actionLabel = (n) => n > 0 ? `${n} اخطار` : "خاموش";
+  const durationLabel = (seconds) => formatStatsDuration(Number(seconds || 0) * 1000);
+  const text = [
+    `⚙️ <b>تنظیمات موتور یکپارچه مدیریت تخلف</b>`,
+    `🏢 ${escapeHTML(String(group.title || "گروه"))}`,
+    `🆔 <code>${chatId}</code>`,
+    "",
+    `🔰 موتور: <b>${cfg.enabled ? "🟢 فعال" : "🔴 خاموش"}</b>`,
+    `⚠️ حد اخطار: <b>${cfg.warningThreshold}</b>`,
+    `🔇 میوت از: <b>${actionLabel(cfg.muteAtWarnings)}</b>`,
+    `⏱️ مدت میوت: <b>${durationLabel(cfg.muteSeconds)}</b>`,
+    `🚫 بن از: <b>${cfg.banAtWarnings > 0 ? cfg.banAtWarnings + " اخطار" : "خاموش"}</b>`,
+    `🔒 قرنطینه قبل از بن: <b>${cfg.quarantineBeforeBan ? "🟢 فعال" : "🔴 خاموش"}</b>`,
+    "",
+    "هر تغییر فقط روی همین گروه ذخیره می‌شود."
+  ].join("\\n");
+  const kb = { inline_keyboard: [
+    [inlineButton(cfg.enabled ? "🔴 خاموش کردن موتور" : "🟢 فعال کردن موتور", `ownerpanel:moderationcfg:${chatId}:toggle`)],
+    [inlineButton("⚠️ حد اخطار", `ownerpanel:moderationcfg:${chatId}:warningThreshold`), inlineButton("🔇 حد میوت", `ownerpanel:moderationcfg:${chatId}:muteAtWarnings`)],
+    [inlineButton("⏱️ مدت میوت", `ownerpanel:moderationcfg:${chatId}:muteSeconds`), inlineButton("🚫 حد بن", `ownerpanel:moderationcfg:${chatId}:banAtWarnings`)],
+    [inlineButton(cfg.quarantineBeforeBan ? "🔴 خاموش قرنطینه قبل بن" : "🟢 فعال قرنطینه قبل بن", `ownerpanel:moderationcfg:${chatId}:quarantineBeforeBan`)],
+    [inlineButton("🔄 بروزرسانی", `ownerpanel:moderation:${chatId}`)],
+    [inlineButton("⬅️ مرکز امنیت", `ownerpanel:securitygroup:${chatId}`), inlineButton("🏠 پنل اصلی", "ownerpanel:main")]
+  ]};
+  await telegram("editMessageText", env, { chat_id: actor, message_id: callback.message.message_id, text, parse_mode: "HTML", reply_markup: kb });
+  await answerCallback(env, callback.id, "⚙️ تنظیمات موتور تخلف");
+  return true;
+}
+
+async function handleOwnerUnifiedModerationCallback(callback, env, chatId, action) {
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await answerCallback(env, callback?.id, "⛔ فقط مالک ربات دسترسی دارد.", true);
+    return true;
+  }
+  if (!chatId || !action) return true;
+  try {
+    const cfg = await getUnifiedModerationConfig(env, chatId);
+    const cycle = (value, values) => {
+      const i = values.indexOf(Number(value));
+      return values[(i < 0 ? 0 : i + 1) % values.length];
+    };
+    if (action === "toggle") {
+      cfg.enabled = !cfg.enabled;
+    } else if (action === "warningThreshold") {
+      cfg.warningThreshold = cycle(cfg.warningThreshold, [1, 2, 3, 4, 5, 7, 10]);
+    } else if (action === "muteAtWarnings") {
+      cfg.muteAtWarnings = cycle(cfg.muteAtWarnings, [1, 2, 3, 4, 5, 7, 10]);
+    } else if (action === "muteSeconds") {
+      cfg.muteSeconds = cycle(cfg.muteSeconds, [60, 120, 300, 600, 1800, 3600]);
+    } else if (action === "banAtWarnings") {
+      cfg.banAtWarnings = cycle(cfg.banAtWarnings, [0, 3, 4, 5, 7, 10]);
+    } else if (action === "quarantineBeforeBan") {
+      cfg.quarantineBeforeBan = !cfg.quarantineBeforeBan;
+    } else {
+      return true;
+    }
+    await saveUnifiedModerationConfig(env, chatId, cfg);
+    try { await writeOwnerEventLog(env, { chatId, actorId: actor, type: "security", action: "تغییر تنظیمات موتور یکپارچه", details: action }); } catch {}
+    await showOwnerUnifiedModerationPanel(env, callback, chatId);
+    return true;
+  } catch (error) {
+    console.error("Owner unified moderation settings:", getSafeErrorMessage(error));
+    await answerCallback(env, callback?.id, "❌ ذخیره تنظیمات انجام نشد.", true);
+    return true;
+  }
+}
+
+async function handleOwnerPanelCallback(callback, env) {
+  const data = String(callback?.data || "");
+  if (!data.startsWith("ownerpanel:")) return false;
+
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await answerCallback(env, callback?.id, "⛔ فقط مالک ربات دسترسی دارد.", true);
+    return true;
+  }
+
+  if (data === "ownerpanel:main" || data === "ownerpanel:refresh") {
+    await showOwnerPanel(env, actor, callback.message?.message_id);
+    await answerCallback(env, callback.id, "🔄 پنل بروزرسانی شد.");
+    return true;
+  }
+
+  if (data === "ownerpanel:security") {
+    return await showOwnerSecurityPanel(env, callback);
+  }
+
+  if (data === "ownerpanel:securityreport") {
+    return await showOwnerSecurityReport(env, callback);
+  }
+
+  if (data.startsWith("ownerpanel:securitygroup:")) {
+    const chatId = Number(data.split(":")[2] || 0);
+    return await showOwnerSecurityGroupPanel(env, callback, chatId);
+  }
+
+  if (data.startsWith("ownerpanel:moderation:")) {
+    const chatId = Number(data.split(":")[2] || 0);
+    return await showOwnerUnifiedModerationPanel(env, callback, chatId);
+  }
+
+  if (data.startsWith("ownerpanel:moderationcfg:")) {
+    const parts = data.split(":");
+    const chatId = Number(parts[2] || 0);
+    const action = String(parts[3] || "");
+    return await handleOwnerUnifiedModerationCallback(callback, env, chatId, action);
+  }
+
+  if (data === "ownerpanel:owners") {
+    return await showOwnerListPanel(env, callback);
+  }
+
+  if (data === "ownerpanel:groups") {
+    return await showOwnerGroupsPanel(env, callback);
+  }
+
+  if (data.startsWith("ownerpanel:welcome:")) {
+    const chatId = Number(data.split(":")[2] || 0);
+    const config = await getWelcomeConfig(env, chatId);
+    const status = (v) => v ? "🟢" : "🔴";
+    const text = [
+      "👋 <b>تنظیمات خوشامدگویی گروه</b>",
+      "",
+      `👋 خوشامدگویی: ${status(config.welcomeEnabled)}`,
+      `🚪 پیام خروج: ${status(config.goodbyeEnabled)}`,
+      `👤 منشن کاربر: ${status(config.mentionUser)}`,
+      `📜 دکمه قوانین: ${status(config.sendRulesButton)}`,
+      `👤 نمایش Username: ${status(config.showUsername)}`,
+      `🆔 نمایش ID: ${status(config.showUserId)}`,
+      `🗑️ حذف خوشامد قبلی: ${status(config.deletePreviousWelcome)}`,
+      `⏱️ حذف خودکار: <b>${Number(config.autoDeleteSeconds || 0)}</b> ثانیه`,
+      "",
+      "برای تغییر متن خوشامد یا پیام خروج، از دستورات تنظیمات خوشامدگویی استفاده کن."
+    ].join("\n");
+    const rows = [
+      [inlineButton("✏️ متن خوشامد", `ownerpanel:welcomeedit:${chatId}:welcome`), inlineButton("✏️ متن خداحافظی", `ownerpanel:welcomeedit:${chatId}:goodbye`)],
+      [inlineButton(`${status(config.welcomeEnabled)} خوشامدگویی`, `ownerpanel:welcometoggle:${chatId}:welcomeEnabled`), inlineButton(`${status(config.goodbyeEnabled)} خروج`, `ownerpanel:welcometoggle:${chatId}:goodbyeEnabled`)],
+      [inlineButton(`${status(config.mentionUser)} منشن`, `ownerpanel:welcometoggle:${chatId}:mentionUser`), inlineButton(`${status(config.sendRulesButton)} قوانین`, `ownerpanel:welcometoggle:${chatId}:sendRulesButton`)],
+      [inlineButton(`${status(config.showUsername)} Username`, `ownerpanel:welcometoggle:${chatId}:showUsername`), inlineButton(`${status(config.showUserId)} ID`, `ownerpanel:welcometoggle:${chatId}:showUserId`)],
+      [inlineButton(`${status(config.deletePreviousWelcome)} حذف قبلی`, `ownerpanel:welcometoggle:${chatId}:deletePreviousWelcome`)],
+      [inlineButton("🔄 بروزرسانی", `ownerpanel:welcome:${chatId}`)],
+      [inlineButton("⬅️ گروه", `ownerpanel:group:${chatId}`), inlineButton("🏠 پنل اصلی", "ownerpanel:main")]
+    ];
+    await telegram("editMessageText", env, { chat_id: actor, message_id: callback.message.message_id, text, parse_mode: "HTML", reply_markup: { inline_keyboard: rows } });
+    await answerCallback(env, callback.id, "تنظیمات خوشامدگویی");
+    return true;
+  }
+
+  if (data.startsWith("ownerpanel:welcomeedit:")) {
+    const parts = data.split(":");
+    const chatId = Number(parts[2] || 0);
+    const field = parts[3] || "";
+    return await requestOwnerWelcomeTextEdit(env, callback, chatId, field);
+  }
+
+  if (data.startsWith("ownerpanel:welcometoggle:")) {
+    const parts = data.split(":");
+    const chatId = Number(parts[2] || 0);
+    const field = parts[3] || "";
+    const allowed = new Set(["welcomeEnabled", "goodbyeEnabled", "mentionUser", "sendRulesButton", "showUsername", "showUserId", "deletePreviousWelcome"]);
+    if (!allowed.has(field)) {
+      await answerCallback(env, callback.id, "⚠️ گزینه نامعتبر است.", true);
+      return true;
+    }
+    const config = await getWelcomeConfig(env, chatId);
+    config[field] = !Boolean(config[field]);
+    await saveWelcomeConfig(env, chatId, config);
+    await logEvent(env, chatId, "welcome_setting_toggle", { userId: actor, key: field, value: config[field] });
+    await answerCallback(env, callback.id, config[field] ? "🟢 فعال شد." : "🔴 خاموش شد.");
+    const fakeCallback = { ...callback, message: { ...callback.message } };
+    return await handleOwnerPanelCallback(fakeCallback, env);
+  }
+
+  if (data.startsWith("ownerpanel:group:")) {
+    const chatId = Number(data.split(":")[2] || 0);
+    return await showOwnerGroupDetails(env, callback, chatId);
+  }
+
+  if (data === "ownerpanel:addadmin") {
+    await telegram("editMessageText", env, {
+      chat_id: actor,
+      message_id: callback.message.message_id,
+      text: "👤 <b>افزودن مدیر گروه</b>\n\nبرای افزودن مدیر، داخل گروه روی پیام کاربر ریپلای کن و دستور «افزودن مدیر» را بفرست. سپس دسترسی‌ها را انتخاب کن.",
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[inlineButton("⬅️ برگشت", "ownerpanel:main")]] }
+    });
+    await answerCallback(env, callback.id, "راهنمای افزودن مدیر");
+    return true;
+  }
+
+  if (data === "ownerpanel:addowner") {
+    await telegram("editMessageText", env, {
+      chat_id: actor,
+      message_id: callback.message.message_id,
+      text: "➕ <b>افزودن مالک</b>\n\nروی پیام کاربر ریپلای کن و دستور «افزودن به مالک روبات» را بفرست. درخواست سپس نیاز به تأیید مالک دارد.\n\n⚠️ مالک دائمی فعلاً فقط از طریق تنظیمات Worker ثبت می‌شود.",
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[inlineButton("⬅️ برگشت", "ownerpanel:main")]] }
+    });
+    await answerCallback(env, callback.id, "راهنمای افزودن مالک");
+    return true;
+  }
+
+  if (data === "ownerpanel:status") {
+    const tokenState = env?.BOT_TOKEN ? "🟢 متصل" : "🔴 تنظیم نشده";
+    const kvState = env?.SECURITY_KV ? "🟢 متصل" : "🔴 تنظیم نشده";
+    await telegram("editMessageText", env, {
+      chat_id: actor,
+      message_id: callback.message.message_id,
+      text: `📊 <b>وضعیت ربات</b>\n\n🤖 Bot Token: ${tokenState}\n🗄️ SECURITY_KV: ${kvState}\n👑 تعداد مالکان ثبت‌شده: <b>${OWNER_IDS.length}</b>`,
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[inlineButton("🔄 بروزرسانی", "ownerpanel:status")],[inlineButton("⬅️ برگشت", "ownerpanel:main")]] }
+    });
+    await answerCallback(env, callback.id, "وضعیت بررسی شد.");
+    return true;
+  }
+
+  if (data.startsWith("ownerpanel:viewowner:")) {
+    const ownerId = Number(data.split(":")[2] || 0);
+    const exists = OWNER_IDS.includes(ownerId);
+    await telegram("editMessageText", env, {
+      chat_id: actor,
+      message_id: callback.message.message_id,
+      text: exists ? `👑 <b>مالک ربات</b>\n\nشناسه: <code>${ownerId}</code>\n\nاین مالک در تنظیمات Worker ثبت شده است.` : "⚠️ مالک پیدا نشد.",
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[inlineButton("⬅️ فهرست مالکان", "ownerpanel:owners")],[inlineButton("🏠 پنل اصلی", "ownerpanel:main")]] }
+    });
+    await answerCallback(env, callback.id);
+    return true;
+  }
+
+  return true;
+}
+
+/* ============================================================
+   OWNER ADMIN MANAGEMENT — REAL TELEGRAM RIGHTS
+============================================================ */
+
+const OWNER_ADMIN_PERMISSION_LABELS = {
+  change_info: "تغییر اطلاعات گروه",
+  delete_messages: "حذف پیام‌ها",
+  restrict_members: "محروم کردن کاربران",
+  invite_users: "دعوت کاربران از طریق لینک",
+  pin_messages: "سنجاق کردن پیام‌ها",
+  manage_video_chats: "مدیریت پخش زنده‌ها",
+  manage_topics: "مدیریت موضوعات",
+  promote_members: "افزودن مدیران جدید",
+  anonymous: "ناشناس ماندن"
+};
+
+function ownerAdminDefaultRights() {
+  return {
+    change_info: false,
+    delete_messages: true,
+    restrict_members: true,
+    invite_users: true,
+    pin_messages: true,
+    manage_video_chats: false,
+    manage_topics: false,
+    promote_members: false,
+    anonymous: false
+  };
+}
+
+function ownerAdminKeyboard(chatId, userId, rights) {
+  const r = rights || ownerAdminDefaultRights();
+  const rows = [];
+  for (const [key, label] of Object.entries(OWNER_ADMIN_PERMISSION_LABELS)) {
+    rows.push([inlineButton(`${r[key] ? "🟢" : "🔴"} ${label}`, `admgr:t:${chatId}:${userId}:${key}`)]);
+  }
+  rows.push([
+    inlineButton("👑 افزودن مدیر", `admgr:add:${chatId}:${userId}`),
+    inlineButton("❌ لغو", `admgr:cancel:${chatId}:${userId}`)
+  ]);
+  rows.push([inlineButton("⬅️ برگشت", "admin:main")]);
+  return { inline_keyboard: rows };
+}
+
+async function openOwnerAdminFlow(message, env) {
+  const chat = message?.chat;
+  const actor = Number(message?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await sendMessage(env, chat?.id, "⛔ فقط مالک ربات می‌تواند مدیر جدید اضافه کند.");
+    return true;
+  }
+  if (!chat || !["group", "supergroup"].includes(chat.type)) {
+    await sendMessage(env, chat?.id, "⚠️ «افزودن مدیر» را داخل گروه و با ریپلای روی کاربر اجرا کن.");
+    return true;
+  }
+  const target = getTargetUser(message);
+  if (!target?.id) {
+    await sendMessage(env, chat.id, "⚠️ ابتدا روی پیام کاربر موردنظر ریپلای کن، سپس «افزودن مدیر» را بفرست.");
+    return true;
+  }
+  if (isOwner(target.id)) {
+    await sendMessage(env, chat.id, "⛔ مالک ربات از قبل در سطح مالک قرار دارد.");
+    return true;
+  }
+  const member = await getChatMember(env, chat.id, target.id);
+  if (!member || ["left", "kicked"].includes(member.status)) {
+    await sendMessage(env, chat.id, "⚠️ کاربر باید عضو گروه باشد.");
+    return true;
+  }
+  if (member.status === "creator") {
+    await sendMessage(env, chat.id, "⛔ مالک گروه را نمی‌توان از این پنل تغییر داد.");
+    return true;
+  }
+  const rights = ownerAdminDefaultRights();
+  await kvPut(env, `admgr:${chat.id}:${target.id}:${actor}`, rights);
+  const name = displayName(target);
+  await sendMessage(env, chat.id,
+    `👑 <b>افزودن مدیر</b>\n\nکاربر: <b>${name}</b>\nشناسه: <code>${target.id}</code>\n\nدسترسی‌ها را انتخاب کن و در پایان «افزودن مدیر» را بزن.`,
+    { reply_markup: ownerAdminKeyboard(chat.id, target.id, rights) });
+  return true;
+}
+
+async function handleAddAdminCommand(message, env) {
+  const parsed = parseBotCommand(message?.text);
+  if (!parsed || parsed.command !== "addAdmin") return false;
+  return await openOwnerAdminFlow(message, env);
+}
+
+async function handleAddOwnerCommand(message, env) {
+  const parsed = parseBotCommand(message?.text);
+  if (!parsed || parsed.command !== "addOwner") return false;
+  const actor = Number(message?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await sendMessage(env, message?.chat?.id, "⛔ فقط مالک ربات می‌تواند مالک جدید اضافه کند.");
+    return true;
+  }
+  const target = getTargetUser(message);
+  if (!target?.id) {
+    await sendMessage(env, message?.chat?.id, "⚠️ برای افزودن مالک، روی پیام کاربر ریپلای کن.");
+    return true;
+  }
+  if (isOwner(target.id)) {
+    await sendMessage(env, message.chat.id, "ℹ️ این کاربر از قبل مالک ربات است.");
+    return true;
+  }
+  await kvPut(env, `owner-pending:${target.id}`, { requestedBy: actor, requestedAt: Date.now(), user: target });
+  await sendMessage(env, message.chat.id,
+    `⚠️ <b>تأیید افزودن مالک</b>\n\nکاربر: ${displayName(target)}\nشناسه: <code>${target.id}</code>\n\nاین قابلیت فقط درخواست مالک جدید را ثبت می‌کند؛ تغییر آرایه مالک‌های کدنویسی‌شده بدون تغییر Secret/کد Worker دائمی نیست.`,
+    { reply_markup: { inline_keyboard: [
+      [inlineButton("✅ تأیید درخواست", `ownerreq:confirm:${target.id}`)],
+      [inlineButton("❌ لغو", `ownerreq:cancel:${target.id}`)],
+      [inlineButton("⬅️ برگشت", "admin:main")]
+    ] } });
+  return true;
+}
+
+async function handleOwnerAdminCallback(callback, env) {
+  const data = String(callback?.data || "");
+  if (!data.startsWith("admgr:") && !data.startsWith("ownerreq:")) return false;
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await answerCallback(env, callback?.id, "⛔ فقط مالک ربات دسترسی دارد.");
+    return true;
+  }
+  if (data.startsWith("ownerreq:")) {
+    const [, action, targetId] = data.split(":");
+    if (action === "cancel") {
+      await kvDelete(env, `owner-pending:${targetId}`);
+      await answerCallback(env, callback.id, "لغو شد.");
+      return true;
+    }
+    if (action === "confirm") {
+      await kvPut(env, `owner-approved:${targetId}`, { approvedBy: actor, approvedAt: Date.now() });
+      await kvDelete(env, `owner-pending:${targetId}`);
+      await answerCallback(env, callback.id, "درخواست تأیید شد.");
+      await telegram("editMessageText", env, { chat_id: callback.message.chat.id, message_id: callback.message.message_id,
+        text: `✅ درخواست مالک جدید برای <code>${targetId}</code> تأیید شد.\n\n⚠️ برای دائمی شدن مالک، شناسه باید در تنظیمات مالک‌های Worker نیز ثبت شود.`, parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[inlineButton("⬅️ برگشت", "admin:main")]] } });
+      return true;
+    }
+  }
+  const parts = data.split(":");
+  const action = parts[1];
+  const chatId = Number(parts[2]);
+  const userId = Number(parts[3]);
+  if (!chatId || !userId) { await answerCallback(env, callback.id, "⚠️ اطلاعات ناقص است."); return true; }
+  const key = `admgr:${chatId}:${userId}:${actor}`;
+  const rights = (await kvGet(env, key, ownerAdminDefaultRights())) || ownerAdminDefaultRights();
+  if (action === "t") {
+    const perm = parts[4];
+    if (!(perm in rights)) { await answerCallback(env, callback.id, "⚠️ دسترسی نامعتبر است."); return true; }
+    rights[perm] = !rights[perm];
+    await kvPut(env, key, rights);
+    await answerCallback(env, callback.id, rights[perm] ? "فعال شد." : "غیرفعال شد.");
+    await telegram("editMessageReplyMarkup", env, { chat_id: chatId, message_id: callback.message.message_id,
+      reply_markup: ownerAdminKeyboard(chatId, userId, rights) });
+    return true;
+  }
+  if (action === "cancel") {
+    await kvDelete(env, key);
+    await answerCallback(env, callback.id, "لغو شد.");
+    await telegram("editMessageText", env, { chat_id: chatId, message_id: callback.message.message_id, text: "❌ افزودن مدیر لغو شد.", reply_markup: { inline_keyboard: [[inlineButton("⬅️ برگشت", "admin:main")]] } });
+    return true;
+  }
+  if (action === "add") {
+    try {
+      const result = await telegram("promoteChatMember", env, {
+        chat_id: chatId,
+        user_id: userId,
+        can_change_info: !!rights.change_info,
+        can_delete_messages: !!rights.delete_messages,
+        can_restrict_members: !!rights.restrict_members,
+        can_invite_users: !!rights.invite_users,
+        can_pin_messages: !!rights.pin_messages,
+        can_manage_video_chats: !!rights.manage_video_chats,
+        can_manage_topics: !!rights.manage_topics,
+        can_promote_members: !!rights.promote_members,
+        is_anonymous: !!rights.anonymous
+      });
+      if (result === false) throw new Error("Telegram promotion failed");
+      await kvDelete(env, key);
+      await answerCallback(env, callback.id, "👑 مدیر اضافه شد.");
+      await telegram("editMessageText", env, { chat_id: chatId, message_id: callback.message.message_id,
+        text: `✅ <b>مدیر اضافه شد</b>\n\nکاربر: <code>${userId}</code>\n\nدسترسی‌های انتخاب‌شده روی Telegram اعمال شدند.`, parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[inlineButton("⬅️ برگشت", "admin:main")]] } });
+      return true;
+    } catch (e) {
+      console.error("Owner add admin:", e);
+      await answerCallback(env, callback.id, "❌ افزودن مدیر انجام نشد.");
+      return true;
+    }
+  }
+  return true;
+}
+
 async function routeBotCommand(
   message,
   env
@@ -12075,6 +13589,28 @@ async function routeBotCommand(
       message,
       env
     );
+  }
+
+  if (parsed.command === "userPermissions") {
+    return await handleUserPermissionsCommand(message, env);
+  }
+
+  if (parsed.command === "addAdmin") {
+    return await handleAddAdminCommand(message, env);
+  }
+
+  if (parsed.command === "addOwner") {
+    return await handleAddOwnerCommand(message, env);
+  }
+
+
+  /* BAD WORDS */
+
+  if (
+    parsed.command ===
+    "badWords"
+  ) {
+    return await handleBadWordsCommand(message, env);
   }
 
 
@@ -12177,6 +13713,31 @@ async function routeBotCommand(
       reply_markup: securityKeyboard(settings)
     });
     return true;
+  }
+
+
+  /* GROUP LOCK / OPEN */
+
+  if (parsed.command === "groupLock") {
+    return await handleGroupLockCommand(message, env, "lock");
+  }
+
+  if (parsed.command === "groupOpen") {
+    return await handleGroupLockCommand(message, env, "open");
+  }
+
+
+  /* TAG */
+
+  if (
+    parsed.command ===
+    "tag"
+  ) {
+    return await handleTagCommand(
+      message,
+      env,
+      parsed
+    );
   }
 
 
@@ -14085,6 +15646,43 @@ function containsLink(
 
 
 /* =========================
+   ADVANCED ADVERTISEMENT CHECK
+========================= */
+
+function isTelegramInviteLink(url) {
+  const source = String(url || "").toLowerCase();
+  return /(?:https?:\/\/)?(?:t\.me\/\+|t\.me\/joinchat\/|telegram\.me\/joinchat\/|telegram\.me\/\+)/i.test(source);
+}
+
+function advertisementSignalCount(text) {
+  const source = String(text || "").toLowerCase();
+  const signals = [
+    /(?:عضو\s*شو|عضوگیری|فالو\s*کن|سابسکرایب|درآمد|خرید\s+و\s+فروش|فروشگاه|تخفیف|promo|promotion|advertis|discount|sale)/i.test(source),
+    /(?:دایرکت|پیام\s*بده|ثبت\s*نام|سفارش|قیمت|قیمت\s*ها|لینک\s*زیر|کلیک\s*کن|join|subscribe|referral)/i.test(source),
+    /(?:تلگرام|کانال|گروه|channel|group)/i.test(source),
+    /(?:\$|٪|%|تومان|ریال|usd|usdt|درصد)/i.test(source)
+  ];
+  return signals.filter(Boolean).length;
+}
+
+function containsAdvancedAdvertisement(text, urls, config) {
+  if (!config?.advertisementEnabled) return false;
+  const source = String(text || "");
+  const urlList = Array.isArray(urls) ? urls : [];
+
+  if (config.blockInviteLinks && urlList.some(isTelegramInviteLink)) {
+    return true;
+  }
+
+  const signals = advertisementSignalCount(source);
+  const hasUrl = urlList.length > 0;
+  const threshold = Number(config.advertisementKeywordThreshold || 2);
+
+  return signals >= threshold && (hasUrl || signals >= threshold + 1);
+}
+
+
+/* =========================
    LINK FILTER
 ========================= */
 
@@ -15312,6 +16910,11 @@ function getDefaultSecuritySettings() {
     maxWarnings: 3,
 
     warningMuteSeconds: 300,
+    warningExpirySeconds: 7 * 24 * 60 * 60,
+
+    quarantineEnabled: true,
+    quarantineAuto: false,
+    quarantineSeconds: 1800,
 
     logActions: true
   };
@@ -15408,6 +17011,22 @@ function normalizeSecuritySettings(
         )
       )
     );
+
+  result.warningExpirySeconds =
+    Math.max(
+      3600,
+      Math.min(
+        30 * 24 * 60 * 60,
+        Number(
+          result.warningExpirySeconds ||
+          7 * 24 * 60 * 60
+        )
+      )
+    );
+
+  result.quarantineEnabled = Boolean(result.quarantineEnabled);
+  result.quarantineAuto = Boolean(result.quarantineAuto);
+  result.quarantineSeconds = Math.max(60, Math.min(7 * 24 * 60 * 60, Number(result.quarantineSeconds || 1800)));
 
   return result;
 }
@@ -15980,6 +17599,7 @@ async function getUserWarnings(
   ) {
     return {
       count: 0,
+      points: 0,
       history: []
     };
   }
@@ -15990,23 +17610,46 @@ async function getUserWarnings(
       `warnings:${chatId}:${userId}`,
       {
         count: 0,
+        points: 0,
         history: []
       }
     );
 
-  return {
-    count:
-      Number(
-        data?.count || 0
-      ),
+  const now = Date.now();
+  const history = Array.isArray(data?.history)
+    ? data.history
+    : [];
 
-    history:
-      Array.isArray(
-        data?.history
-      )
-        ? data.history
-        : []
+  // Expired warnings no longer contribute to the active count/score,
+  // but remain in history for audit purposes. Legacy entries without
+  // expiresAt are treated as active for backward compatibility.
+  const active = history.filter((item) =>
+    !item?.expiresAt || Number(item.expiresAt) > now
+  );
+
+  const count = active.reduce(
+    (sum, item) => sum + Math.max(1, Number(item?.points || 1)),
+    0
+  );
+
+  const points = active.reduce(
+    (sum, item) => sum + Math.max(1, Number(item?.points || 1)),
+    0
+  );
+
+  const normalized = {
+    count,
+    points,
+    history
   };
+
+  // Persist only when the active count changed or legacy data needs
+  // the new score field. This keeps the existing history intact.
+  if (Number(data?.count || 0) !== count || Number(data?.points || 0) !== points) {
+    await saveUserWarnings(env, chatId, userId, normalized);
+  }
+
+  return normalized;
 }
 
 
@@ -16076,6 +17719,14 @@ async function addWarning(
       userId
     );
 
+  const settings = await getSecuritySettings(env, chatId);
+  const now = Date.now();
+  const points = 1;
+  const expirySeconds = Math.max(
+    3600,
+    Math.min(30 * 24 * 60 * 60, Number(settings.warningExpirySeconds || 7 * 24 * 60 * 60))
+  );
+
   const entry = {
     actorId:
       Number(
@@ -16090,15 +17741,21 @@ async function addWarning(
         500
       ),
 
-    timestamp:
-      Date.now()
+    timestamp: now,
+    points,
+    expiresAt: now + expirySeconds * 1000
   };
-
-  warnings.count += 1;
 
   warnings.history.unshift(
     entry
   );
+
+  warnings.history = warnings.history.slice(0, 50);
+  warnings.count = warnings.history.reduce(
+    (sum, item) => sum + (!item?.expiresAt || Number(item.expiresAt) > now ? Math.max(1, Number(item?.points || 1)) : 0),
+    0
+  );
+  warnings.points = warnings.count;
 
   await saveUserWarnings(
     env,
@@ -16141,6 +17798,12 @@ async function addWarning(
         warnings.count
     }
   );
+
+  try {
+    await maybeAutoQuarantine(env, chatId, userId, warnings.count, entry.reason);
+  } catch (error) {
+    console.error("Auto quarantine:", getSafeErrorMessage(error));
+  }
 
   return warnings;
 }
@@ -18946,6 +20609,70 @@ async function performSpamAction(
    ANTI-SPAM PROCESSOR
 ========================= */
 
+function getAntiFloodProfile(config) {
+  const intensity = String(config?.intensity || "medium");
+  if (intensity === "low") {
+    return {
+      maxMessages: Math.max(8, Number(config.maxMessages || 8)),
+      windowSeconds: Math.max(10, Number(config.windowSeconds || 10)),
+      maxRepeatedMessages: Math.max(4, Number(config.maxRepeatedMessages || 4)),
+      muteSeconds: Math.max(60, Number(config.muteSeconds || 300))
+    };
+  }
+  if (intensity === "high") {
+    return {
+      maxMessages: Math.max(3, Math.min(5, Number(config.maxMessages || 5))),
+      windowSeconds: Math.max(5, Math.min(10, Number(config.windowSeconds || 10))),
+      maxRepeatedMessages: Math.max(2, Math.min(3, Number(config.maxRepeatedMessages || 3))),
+      muteSeconds: Math.max(300, Number(config.muteSeconds || 600))
+    };
+  }
+  return {
+    maxMessages: Number(config.maxMessages || 6),
+    windowSeconds: Number(config.windowSeconds || 10),
+    maxRepeatedMessages: Number(config.maxRepeatedMessages || 3),
+    muteSeconds: Number(config.muteSeconds || 300)
+  };
+}
+
+async function processAntiFloodViolation(message, env, config, reason) {
+  const chatId = message.chat.id;
+  const userId = Number(message.from?.id || 0);
+  if (!chatId || !userId || isProtectedUser(userId)) return false;
+
+  if (config.ignoreAdmins && await isAdmin(env, chatId, userId)) return false;
+
+  if (config.deleteSpam && message.message_id) {
+    await deleteBotMessage(env, chatId, message.message_id);
+  }
+
+  const warning = await addSpamWarning(env, chatId, userId);
+  const action = String(config.floodAction || "escalate");
+  const shouldMute = action === "mute" || (action === "escalate" && warning.count >= Number(config.maxWarnings || 3));
+  let muted = false;
+  if (shouldMute) {
+    const profile = getAntiFloodProfile(config);
+    muted = await muteUser(env, chatId, userId, profile.muteSeconds);
+    if (muted) await resetSpamWarnings(env, chatId, userId);
+  }
+
+  if (config.warnUser) {
+    const name = escapeHTML(displayName(message.from));
+    const text = muted
+      ? `🚨 <b>${name}</b> به دلیل تکرار تخلف ضدفلود، ${getAntiFloodProfile(config).muteSeconds} ثانیه محدود شد.`
+      : `⚠️ <b>${name}</b>
+ارسال پیام‌های پشت‌سرهم مجاز نیست.
+اخطار: <b>${warning.count}/${config.maxWarnings}</b>`;
+    await sendMessage(env, chatId, text);
+  }
+
+  if (config.logActions) {
+    await addAuditLog(env, chatId, userId, "anti_flood", message.message_id || 0, { reason, muted, warnings: warning.count, intensity: config.intensity });
+  }
+  await incrementStat(env, chatId, "spamViolations");
+  return true;
+}
+
 async function processAntiSpam(
   message,
   env
@@ -19016,6 +20743,15 @@ async function processAntiSpam(
     return false;
   }
 
+  if (
+    config.ignoreAdmins &&
+    await isAdmin(env, chatId, userId)
+  ) {
+    return false;
+  }
+
+  const profile = getAntiFloodProfile(config);
+
   const oversized =
     await detectOversizedMessage(
       env,
@@ -19032,10 +20768,11 @@ async function processAntiSpam(
       message.message_id
     );
 
-    return performSpamAction(
+    return processAntiFloodViolation(
       message,
       env,
-      "پیام بیش از حد مجاز"
+      config,
+      "oversized_message"
     );
   }
 
@@ -19056,10 +20793,11 @@ async function processAntiSpam(
       message.message_id
     );
 
-    return performSpamAction(
+    return processAntiFloodViolation(
       message,
       env,
-      "ارسال پیام تکراری"
+      config,
+      "repeated_message"
     );
   }
 
@@ -19073,12 +20811,12 @@ async function processAntiSpam(
   const recent =
     countRecentMessages(
       history,
-      config.floodWindow
+      profile.windowSeconds
     );
 
   if (
     recent.length >=
-    config.floodLimit
+    profile.maxMessages
   ) {
     await recordUserMessage(
       env,
@@ -25151,6 +26889,138 @@ async function routeRulesSystem__legacy_1(
   return false;
 }
 /* ============================================================
+   PART 28.5 — USER QUARANTINE SYSTEM
+   Persian + English
+============================================================ */
+
+function quarantineKey(chatId, userId) {
+  return `quarantine:${chatId}:${userId}`;
+}
+
+async function getQuarantine(env, chatId, userId) {
+  const data = await kvGet(env, quarantineKey(chatId, userId), null);
+  if (!data) return null;
+  if (Number(data.expiresAt || 0) > 0 && Number(data.expiresAt) <= Date.now()) {
+    await kvDelete(env, quarantineKey(chatId, userId));
+    return null;
+  }
+  return data;
+}
+
+async function setQuarantine(env, chatId, userId, actorId = 0, seconds = 1800, reason = "") {
+  if (!chatId || !userId || isProtectedUser(userId)) return false;
+  const duration = Math.max(60, Math.min(7 * 24 * 60 * 60, Number(seconds || 1800)));
+  const data = {
+    chatId: Number(chatId),
+    userId: Number(userId),
+    actorId: Number(actorId || 0),
+    reason: String(reason || "بدون دلیل").slice(0, 500),
+    createdAt: Date.now(),
+    expiresAt: Date.now() + duration * 1000
+  };
+  const success = await muteUser(env, chatId, userId, duration);
+  if (!success) return false;
+  await kvPut(env, quarantineKey(chatId, userId), data);
+  await addAuditLog(env, chatId, actorId, "quarantine", userId, {
+    reason: data.reason,
+    seconds: duration,
+    expiresAt: data.expiresAt
+  });
+  try { await writeOwnerEventLog(env, {
+    chatId, actorId, targetId: userId, type: "security",
+    action: "قرنطینه کاربر", details: data.reason
+  }); } catch {}
+  try { await incrementStat(env, chatId, "quarantines"); } catch {}
+  return true;
+}
+
+async function releaseQuarantine(env, chatId, userId, actorId = 0) {
+  if (!chatId || !userId) return false;
+  const existing = await getQuarantine(env, chatId, userId);
+  if (!existing) return false;
+  const success = await unmuteUser(env, chatId, userId);
+  if (!success) return false;
+  await kvDelete(env, quarantineKey(chatId, userId));
+  await addAuditLog(env, chatId, actorId, "quarantine_release", userId);
+  try { await writeOwnerEventLog(env, {
+    chatId, actorId, targetId: userId, type: "security",
+    action: "خروج از قرنطینه", details: "قرنطینه دستی آزاد شد."
+  }); } catch {}
+  return true;
+}
+
+async function enforceQuarantine(message, env) {
+  const chatId = Number(message?.chat?.id || 0);
+  const userId = Number(message?.from?.id || 0);
+  if (!chatId || !userId) return false;
+  if (message?.from?.is_bot || isOwner(userId)) return false;
+  const settings = await getSecuritySettings(env, chatId);
+  if (!settings.quarantineEnabled) return false;
+  if (await isAdmin(env, chatId, userId)) return false;
+  const q = await getQuarantine(env, chatId, userId);
+  if (!q) return false;
+
+  if (Number(q.expiresAt || 0) <= Date.now()) {
+    await kvDelete(env, quarantineKey(chatId, userId));
+    return false;
+  }
+
+  try { await telegram("deleteMessage", env, { chat_id: chatId, message_id: message.message_id }); } catch {}
+  try { await incrementStat(env, chatId, "deletedMessages"); } catch {}
+  return true;
+}
+
+async function maybeAutoQuarantine(env, chatId, userId, warningCount, reason = "") {
+  const settings = await getSecuritySettings(env, chatId);
+  if (!settings.quarantineEnabled || !settings.quarantineAuto) return false;
+  const threshold = Math.max(1, Number(settings.maxWarnings || 3));
+  if (Number(warningCount || 0) < threshold) return false;
+  if (isProtectedUser(userId) || await isAdmin(env, chatId, userId)) return false;
+  const current = await getQuarantine(env, chatId, userId);
+  if (current) return true;
+  return await setQuarantine(env, chatId, userId, 0, settings.quarantineSeconds, reason || "رسیدن به حد اخطار");
+}
+
+async function handleQuarantineCommand(message, env) {
+  const text = String(message?.text || "").trim().toLowerCase();
+  const normalized = text.replace(/[‌_]/g, " ").replace(/\s+/g, " ");
+  const command = normalized.split(" ")[0];
+  if (!["قرنطینه", "quarantine", "رفع قرنطینه", "رفعقرنطینه", "release quarantine", "releasequarantine"].includes(command === "رفع" ? normalized : command)) return false;
+
+  const chatId = Number(message?.chat?.id || 0);
+  const actorId = Number(message?.from?.id || 0);
+  if (!chatId || !actorId) return false;
+  if (!await isAdmin(env, chatId, actorId)) {
+    await sendMessage(env, chatId, "⛔ فقط مدیران می‌توانند قرنطینه را مدیریت کنند.");
+    return true;
+  }
+
+  const target = getTargetUser(message);
+  if (!target?.id) {
+    await sendMessage(env, chatId, "⚠️ روی پیام کاربر ریپلای کن و دستور قرنطینه یا رفع قرنطینه را بفرست.");
+    return true;
+  }
+  const targetId = Number(target.id);
+  if (isProtectedUser(targetId)) {
+    await sendMessage(env, chatId, "🛡️ این کاربر محافظت شده است.");
+    return true;
+  }
+
+  const isRelease = normalized.startsWith("رفع قرنطینه") || normalized.startsWith("رفعقرنطینه") || normalized.startsWith("release quarantine") || normalized.startsWith("releasequarantine");
+  if (isRelease) {
+    const ok = await releaseQuarantine(env, chatId, targetId, actorId);
+    await sendMessage(env, chatId, ok ? "✅ کاربر از قرنطینه خارج شد." : "ℹ️ این کاربر در قرنطینه نبود.");
+    return true;
+  }
+
+  const settings = await getSecuritySettings(env, chatId);
+  const seconds = parseDuration(normalized.split(" ").slice(1).join(" ")) || settings.quarantineSeconds;
+  const ok = await setQuarantine(env, chatId, targetId, actorId, seconds, "قرنطینه دستی توسط مدیر");
+  await sendMessage(env, chatId, ok ? `🔒 کاربر برای ${formatStatsDuration(seconds * 1000)} وارد قرنطینه شد.` : "❌ قرنطینه انجام نشد. ربات باید دسترسی محدودکردن اعضا داشته باشد.");
+  return true;
+}
+
+/* ============================================================
    PART 29 — ADVANCED ANTI-LINK / ANTI-ADVERTISING SYSTEM
    Persian + English
 ============================================================ */
@@ -25188,7 +27058,23 @@ function getDefaultAntiLinkConfig() {
 
     customBlockedDomains: [],
 
-    logActions: true
+    logActions: true,
+
+    advertisementEnabled: true,
+
+    advertisementKeywordThreshold: 2,
+
+    blockInviteLinks: true,
+
+    allowUnknownDomains: false,
+
+    checkTextLinks: true,
+
+    checkEntities: true,
+
+    severeInviteAction: "escalate",
+
+    banAfterWarnings: 0
   };
 }
 
@@ -25347,6 +27233,59 @@ async function saveLinkConfig(
       normalized.logActions
     );
 
+  normalized.advertisementEnabled =
+    Boolean(
+      normalized.advertisementEnabled
+    );
+
+  normalized.advertisementKeywordThreshold =
+    Math.max(
+      1,
+      Math.min(
+        5,
+        Number(
+          normalized.advertisementKeywordThreshold ||
+          2
+        )
+      )
+    );
+
+  normalized.blockInviteLinks =
+    Boolean(
+      normalized.blockInviteLinks
+    );
+
+  normalized.allowUnknownDomains =
+    Boolean(
+      normalized.allowUnknownDomains
+    );
+
+  normalized.checkTextLinks =
+    Boolean(
+      normalized.checkTextLinks
+    );
+
+  normalized.checkEntities =
+    Boolean(
+      normalized.checkEntities
+    );
+
+  normalized.severeInviteAction =
+    ["warn", "mute", "ban", "escalate"].includes(
+      String(normalized.severeInviteAction || "escalate")
+    )
+      ? String(normalized.severeInviteAction || "escalate")
+      : "escalate";
+
+  normalized.banAfterWarnings =
+    Math.max(
+      0,
+      Math.min(
+        10,
+        Number(normalized.banAfterWarnings || 0)
+      )
+    );
+
   await kvPut(
     env,
     `link_config:${chatId}`,
@@ -25392,6 +27331,45 @@ function extractUrls(
 /* =========================
    DOMAIN EXTRACTION
 ========================= */
+
+function extractEntityUrls(message) {
+  if (!message) return [];
+  const urls = [];
+  const texts = [
+    { text: String(message.text || ""), entities: message.entities },
+    { text: String(message.caption || ""), entities: message.caption_entities }
+  ];
+
+  for (const item of texts) {
+    if (!Array.isArray(item.entities) || !item.text) continue;
+    for (const entity of item.entities) {
+      if (!entity) continue;
+      if (entity.type === "url") {
+        const value = item.text.slice(Number(entity.offset || 0), Number(entity.offset || 0) + Number(entity.length || 0));
+        if (value) urls.push(value);
+      } else if (entity.type === "text_link" && entity.url) {
+        urls.push(String(entity.url));
+      }
+    }
+  }
+
+  return urls;
+}
+
+
+/* =========================
+   DOMAIN NORMALIZATION
+========================= */
+
+function normalizeLinkUrls(message, text) {
+  const urls = [
+    ...extractUrls(text),
+    ...extractEntityUrls(message)
+  ];
+
+  return [...new Set(urls.map((url) => String(url || "").trim()).filter(Boolean))];
+}
+
 
 function extractDomain(
   url
@@ -25622,7 +27600,7 @@ function classifyLink(
     domain,
 
     allowed:
-      false,
+      Boolean(config.allowUnknownDomains),
 
     reason:
       "unknown"
@@ -26012,132 +27990,70 @@ async function handleLinkViolation(
   config,
   reason
 ) {
-  const chatId =
-    message.chat.id;
+  const chatId = message.chat.id;
+  const userId = Number(message.from?.id || 0);
+  if (!chatId || !userId || isProtectedUser(userId)) return false;
 
-  const userId =
-    Number(
-      message.from?.id ||
-      0
-    );
+  if (config.allowAdmins && await isAdmin(env, chatId, userId)) return false;
 
-  if (
-    !chatId ||
-    !userId
-  ) {
-    return false;
+  let deleted = false;
+  if (config.deleteLinks && message.message_id) {
+    deleted = await deleteLinkMessage(env, chatId, message.message_id);
   }
 
-  let deleted =
-    false;
-
-  if (
-    config.deleteLinks &&
-    message.message_id
-  ) {
-    deleted =
-      await deleteLinkMessage(
-        env,
-        chatId,
-        message.message_id
-      );
-  }
-
-  const warning =
-    await addLinkWarning(
-      env,
-      chatId,
-      userId
-    );
-
-  let muted =
-    false;
-
-  if (
-    config.muteAfterWarnings &&
-    warning.count >=
-      config.maxWarnings
-  ) {
-    muted =
-      await muteLinkUser(
-        env,
-        chatId,
-        userId,
-        config.muteSeconds
-      );
-
-    await resetLinkWarnings(
-      env,
-      chatId,
-      userId
-    );
-  }
-
-  if (
-    config.warnUser
-  ) {
-    const name =
-      escapeHTML(
-        displayName(
-          message.from
-        )
-      );
-
-    const warningText =
-      muted
-        ? [
-            `🚨 <b>${name}</b>`,
-            "",
-            "به دلیل تکرار ارسال محتوای غیرمجاز، دسترسی ارسال پیام برای مدت کوتاهی محدود شد."
-          ].join(
-            "\n"
-          )
-        : [
-            `⚠️ <b>${name}</b>`,
-            "",
-            "ارسال لینک یا تبلیغات در این گروه مجاز نیست.",
-            "",
-            `اخطار: <b>${warning.count}/${config.maxWarnings}</b>`
-          ].join(
-            "\n"
-          );
-
-    await sendMessage(
-      env,
-      chatId,
-      warningText
-    );
-  }
-
-  if (
-    config.logActions
-  ) {
-    await addAuditLog(
-      env,
-      chatId,
-      userId,
-      "link_filter",
-      message.message_id ||
-        0,
-      {
-        reason,
-        deleted,
-        muted,
-        warnings:
-          warning.count
-      }
-    );
-  }
-
-  await incrementStat(
+  // Keep the legacy link-specific counter for compatibility, while the
+  // central warning system is now the authoritative violation score.
+  const legacyWarning = await addLinkWarning(env, chatId, userId);
+  const settings = await getSecuritySettings(env, chatId);
+  const unified = await applyUnifiedViolation(
+    message,
     env,
-    chatId,
-    "linkViolations"
+    {
+      source: "anti_link",
+      reason: `ضدلینک: ${reason}`,
+      actorId: 0
+    }
   );
 
+  const warningCount = Number(unified.warnings || 0);
+  const muted = Boolean(unified.muted || unified.quarantined);
+  const banned = Boolean(unified.banned);
+
+  if (muted || banned) {
+    await resetLinkWarnings(env, chatId, userId);
+  }
+
+  if (config.warnUser) {
+    const name = escapeHTML(displayName(message.from));
+    const actionText = banned
+      ? "🚫 به دلیل تکرار تخلف، کاربر مسدود شد."
+      : muted
+        ? "🔇 به دلیل تکرار تخلف، دسترسی ارسال پیام برای مدت کوتاهی محدود شد."
+        : `اخطار: <b>${warningCount}/${Number(settings.maxWarnings || config.maxWarnings || 3)}</b>`;
+
+    await sendMessage(env, chatId, [
+      `⚠️ <b>${name}</b>`,
+      "",
+      "ارسال این لینک در گروه مجاز نیست.",
+      "",
+      actionText
+    ].join("\n"));
+  }
+
+  if (config.logActions) {
+    await addAuditLog(env, chatId, userId, "link_filter", message.message_id || 0, {
+      reason,
+      deleted,
+      muted,
+      banned,
+      warnings: warningCount,
+      legacyWarnings: legacyWarning.count
+    });
+  }
+
+  await incrementStat(env, chatId, "linkViolations");
   return true;
 }
-
 
 /* =========================
    LINK FILTER
@@ -26203,12 +28119,13 @@ async function handleAntiLinkMessage(
       )
       .trim();
 
-  if (!text) {
+  if (!text && !(config.checkEntities && extractEntityUrls(message).length)) {
     return false;
   }
 
   const urls =
-    extractUrls(
+    normalizeLinkUrls(
+      message,
       text
     );
 
@@ -26238,16 +28155,19 @@ async function handleAntiLinkMessage(
   }
 
   if (
-    containsAdvertisement(
-      text
-    ) &&
-    urls.length
+    containsAdvancedAdvertisement(
+      text,
+      urls,
+      config
+    )
   ) {
     return await handleLinkViolation(
       message,
       env,
       config,
-      "advertisement"
+      urls.some(isTelegramInviteLink)
+        ? "advertisement_invite"
+        : "advertisement"
     );
   }
 
@@ -26823,7 +28743,11 @@ const ANTI_SPAM_DEFAULTS = {
 
   ignoreAdmins: true,
 
-  logActions: true
+  logActions: true,
+
+  intensity: "medium",
+
+  floodAction: "escalate"
 };
 
 
@@ -26943,6 +28867,20 @@ async function saveAntiSpamConfig(
     Boolean(
       normalized.logActions
     );
+
+  normalized.intensity =
+    ["low", "medium", "high"].includes(
+      String(normalized.intensity || "medium")
+    )
+      ? String(normalized.intensity || "medium")
+      : "medium";
+
+  normalized.floodAction =
+    ["warn", "mute", "escalate"].includes(
+      String(normalized.floodAction || "escalate")
+    )
+      ? String(normalized.floodAction || "escalate")
+      : "escalate";
 
   await kvPut(
     env,
@@ -27317,28 +29255,27 @@ async function handleSpamViolation(
       );
   }
 
-  const warning =
+  const legacyWarning =
     await addSpamWarning(
       env,
       chatId,
       userId
     );
 
-  let muted =
-    false;
+  const unified = await applyUnifiedViolation(
+    message,
+    env,
+    {
+      source: "anti_spam",
+      reason,
+      actorId: 0
+    }
+  );
 
-  if (
-    warning.count >=
-      config.maxWarnings
-  ) {
-    muted =
-      await muteLinkUser(
-        env,
-        chatId,
-        userId,
-        config.muteSeconds
-      );
+  const warning = { count: unified.warnings || legacyWarning.count };
+  const muted = Boolean(unified.muted || unified.quarantined);
 
+  if (muted || unified.banned) {
     await resetSpamWarnings(
       env,
       chatId,
@@ -27411,6 +29348,243 @@ async function handleSpamViolation(
   return true;
 }
 
+
+
+/* ============================================================
+   BAD WORD PROTECTION
+   Admin-managed Persian bad-word filter.
+============================================================ */
+function badWordsKey(chatId) {
+  return `badwords:${chatId}`;
+}
+
+function badWordViolationKey(chatId, userId) {
+  return `badword_violation:${chatId}:${userId}`;
+}
+
+function badWordEventKey(eventId) {
+  return `badword_event:${eventId}`;
+}
+
+async function getBadWordConfig(env, chatId) {
+  const stored = await kvGet(env, badWordsKey(chatId), null);
+  const cfg = stored && typeof stored === "object" ? stored : {};
+  const words = Array.isArray(cfg.words) ? cfg.words : [];
+  return {
+    enabled: Boolean(cfg.enabled),
+    words: [...new Set(words.map(x => String(x).trim().toLowerCase()).filter(Boolean))].slice(0, 500)
+  };
+}
+
+async function saveBadWordConfig(env, chatId, cfg) {
+  return await kvPut(env, badWordsKey(chatId), {
+    enabled: Boolean(cfg.enabled),
+    words: [...new Set((cfg.words || []).map(x => String(x).trim().toLowerCase()).filter(Boolean))].slice(0, 500)
+  });
+}
+
+function extractMessageText(message) {
+  return String(message?.text || message?.caption || "").trim();
+}
+
+function findBadWord(text, words) {
+  const normalized = String(text || "")
+    .replace(/[\u200c\u200f]/g, " ")
+    .toLowerCase();
+  for (const word of words || []) {
+    if (word && normalized.includes(word)) return word;
+  }
+  return null;
+}
+
+async function notifyOwnersBadWord(env, chatId, message, eventId, matchedWord, count) {
+  const name = displayName(message.from);
+  const original = escapeHTML(extractMessageText(message).slice(0, 1200));
+  const text = [
+    "🚨 <b>تخلف کلمات ممنوعه</b>",
+    "",
+    `👤 کاربر: ${name}`,
+    `🆔 <code>${Number(message.from?.id || 0)}</code>`,
+    `💬 گروه: <code>${chatId}</code>`,
+    `🔢 تعداد تخلف: <b>${count}</b>`,
+    `🔎 کلمه شناسایی‌شده: <code>${escapeHTML(matchedWord)}</code>`,
+    "",
+    "متن پیام برای بررسی:",
+    `<blockquote>${original || "[بدون متن]"}</blockquote>`
+  ].join("\n");
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: "👁 مشاهده پیام", callback_data: `badword:show:${eventId}` },
+        { text: "🔊 رفع میوت", callback_data: `badword:unmute:${eventId}` }
+      ],
+      [
+        { text: "🔇 میوت ۲ دقیقه", callback_data: `badword:mute:${eventId}:120` },
+        { text: "🚫 بن", callback_data: `badword:ban:${eventId}` }
+      ],
+      [
+        { text: "⬅️ برگشت", callback_data: `badword:back:${eventId}` }
+      ]
+    ]
+  };
+
+  for (const ownerId of OWNER_IDS) {
+    try {
+      await sendMessage(env, ownerId, text, { reply_markup: keyboard });
+    } catch (error) {
+      console.error("Bad-word owner notification:", getSafeErrorMessage(error));
+    }
+  }
+}
+
+async function handleBadWordViolation(message, env, matchedWord) {
+  const chatId = message.chat.id;
+  const userId = Number(message.from?.id || 0);
+  if (!chatId || !userId || !matchedWord) return false;
+  if (isOwner(userId)) return false;
+  if (await isAdmin(env, chatId, userId)) return false;
+
+  const current = Number(await kvGet(env, badWordViolationKey(chatId, userId), 0)) || 0;
+  const count = current + 1;
+  await kvPut(env, badWordViolationKey(chatId, userId), count);
+
+  const eventId = `${Date.now()}_${userId}`;
+  await kvPut(env, badWordEventKey(eventId), {
+    chatId,
+    userId,
+    user: message.from,
+    messageId: message.message_id,
+    text: extractMessageText(message).slice(0, 2000),
+    matchedWord,
+    count,
+    createdAt: Date.now()
+  }, { expirationTtl: 86400 });
+
+  try {
+    await deleteMessage(env, chatId, message.message_id);
+  } catch (error) {
+    console.error("Bad-word delete:", getSafeErrorMessage(error));
+  }
+
+  const unified = await applyUnifiedViolation(
+    message,
+    env,
+    {
+      source: "bad_words",
+      reason: `کلمات ممنوعه: ${matchedWord}`,
+      actorId: 0
+    }
+  );
+  const muted = Boolean(unified.muted || unified.quarantined);
+  const banned = Boolean(unified.banned);
+
+  await incrementStat(env, chatId, "badWords");
+  await notifyOwnersBadWord(env, chatId, message, eventId, matchedWord, count);
+
+  const name = displayName(message.from);
+  const action = banned ? "🚫 کاربر به دلیل تکرار تخلف مسدود شد." : muted ? "🔇 دسترسی ارسال پیام موقتاً محدود شد." : `⚠️ اخطار ثبت شد (${unified.warnings || count})`;
+  await sendMessage(env, chatId, `⚠️ <b>${name}</b> ارسال محتوای ممنوع مجاز نیست.\n${action}`);
+  return true;
+}
+
+async function processBadWords(message, env) {
+  if (!message?.chat?.id || !message?.from || message.from.is_bot) return false;
+  const cfg = await getBadWordConfig(env, message.chat.id);
+  if (!cfg.enabled || !cfg.words.length) return false;
+  const matched = findBadWord(extractMessageText(message), cfg.words);
+  if (!matched) return false;
+  return await handleBadWordViolation(message, env, matched);
+}
+
+async function handleBadWordsCommand(message, env) {
+  const parsed = parseBotCommand(message?.text);
+  if (!parsed || !["badwords", "کلمات_ممنوعه", "کلماتممنوعه"].includes(parsed.command)) return false;
+  const chatId = message.chat.id;
+  const userId = Number(message.from?.id || 0);
+  if (!await isAdmin(env, chatId, userId)) {
+    await sendMessage(env, chatId, "⛔ فقط مدیران می‌توانند کلمات ممنوعه را مدیریت کنند.");
+    return true;
+  }
+  const cfg = await getBadWordConfig(env, chatId);
+  const args = parsed.args || [];
+  const action = String(args[0] || "").toLowerCase();
+  const word = args.slice(1).join(" ").trim().toLowerCase();
+
+  if (["افزودن", "add"].includes(action) && word) {
+    cfg.words.push(word);
+    cfg.enabled = true;
+    await saveBadWordConfig(env, chatId, cfg);
+    await sendMessage(env, chatId, `✅ کلمه <code>${escapeHTML(word)}</code> به فهرست ممنوعه اضافه شد.`);
+    return true;
+  }
+  if (["حذف", "delete", "remove"].includes(action) && word) {
+    cfg.words = cfg.words.filter(x => x !== word);
+    await saveBadWordConfig(env, chatId, cfg);
+    await sendMessage(env, chatId, `✅ کلمه <code>${escapeHTML(word)}</code> حذف شد.`);
+    return true;
+  }
+  if (["روشن", "on"].includes(action)) {
+    cfg.enabled = true;
+    await saveBadWordConfig(env, chatId, cfg);
+    await sendMessage(env, chatId, "🟢 سیستم کلمات ممنوعه فعال شد.");
+    return true;
+  }
+  if (["خاموش", "off"].includes(action)) {
+    cfg.enabled = false;
+    await saveBadWordConfig(env, chatId, cfg);
+    await sendMessage(env, chatId, "🔴 سیستم کلمات ممنوعه خاموش شد.");
+    return true;
+  }
+  const list = cfg.words.length ? cfg.words.map((x, i) => `${i + 1}. <code>${escapeHTML(x)}</code>`).join("\n") : "— فهرست خالی است —";
+  await sendMessage(env, chatId, [
+    "🚫 <b>مدیریت کلمات ممنوعه</b>",
+    `وضعیت: ${cfg.enabled ? "🟢 فعال" : "🔴 خاموش"}`,
+    "",
+    list,
+    "",
+    "➕ <code>کلمات ممنوعه افزودن کلمه</code>",
+    "➖ <code>کلمات ممنوعه حذف کلمه</code>",
+    "🟢 <code>کلمات ممنوعه روشن</code>",
+    "🔴 <code>کلمات ممنوعه خاموش</code>"
+  ].join("\n"));
+  return true;
+}
+
+async function handleBadWordCallback(callback, env) {
+  const data = String(callback?.data || "");
+  if (!data.startsWith("badword:")) return false;
+  const parts = data.split(":");
+  const action = parts[1];
+  const eventId = parts[2];
+  const event = await kvGet(env, badWordEventKey(callback.message?.chat?.id, eventId), null);
+  if (!event) {
+    await answerCallback(env, callback.id, "⚠️ اطلاعات این تخلف منقضی شده است.");
+    return true;
+  }
+  const actorId = Number(callback.from?.id || 0);
+  if (!isOwner(actorId) && !await isAdmin(env, event.chatId, actorId)) {
+    await answerCallback(env, callback.id, "⛔ فقط مدیران دسترسی دارند.", true);
+    return true;
+  }
+  if (action === "show") {
+    await sendMessage(env, actorId, `👁 <b>متن ثبت‌شده:</b>\n\n${escapeHTML(event.text || "[بدون متن]")}`);
+  } else if (action === "mute") {
+    const seconds = Math.max(30, Number(parts[3] || 120));
+    await muteUser(env, event.chatId, event.userId, seconds);
+    await sendMessage(env, actorId, `🔇 کاربر برای ${Math.round(seconds / 60)} دقیقه میوت شد.`);
+  } else if (action === "unmute") {
+    await unmuteUser(env, event.chatId, event.userId);
+    await sendMessage(env, actorId, "🔊 میوت کاربر برداشته شد.");
+  } else if (action === "ban") {
+    await banUser(env, event.chatId, event.userId);
+    await sendMessage(env, actorId, "🚫 کاربر بن شد.");
+  } else if (action === "back") {
+    await sendMessage(env, actorId, "⬅️ عملیات مدیریت تخلف بسته شد.");
+  }
+  await answerCallback(env, callback.id, "✅ انجام شد.");
+  return true;
+}
 
 /* =========================
    MAIN ANTI-SPAM HANDLER
@@ -30113,6 +32287,7 @@ function getDefaultChatStats() {
     spamViolations: 0,
 
     warnings: 0,
+    quarantines: 0,
     mutes: 0,
     bans: 0,
 
@@ -30226,9 +32401,289 @@ async function incrementStat(
     stats
   );
 
+  try {
+    await incrementDailyStat(env, chatId, statName, amount);
+  } catch (error) {
+    console.error("Daily stats:", error?.message || String(error));
+  }
+
   return stats[statName];
 }
 
+
+/* =========================
+   DAILY STATS
+========================= */
+
+function getStatsDayKey(timestamp = Date.now()) {
+  const d = new Date(timestamp);
+  return d.toISOString().slice(0, 10);
+}
+
+async function incrementDailyStat(env, chatId, statName, amount = 1) {
+  const day = getStatsDayKey();
+  const key = `chat_stats_daily:${chatId}:${day}`;
+  const current = await kvGet(env, key, null) || {
+    date: day,
+    chatId: Number(chatId),
+    messages: 0,
+    users: 0,
+    warnings: 0,
+    mutes: 0,
+    bans: 0,
+    deletedMessages: 0,
+    linkViolations: 0,
+    spamViolations: 0,
+    commands: 0,
+    updatedAt: Date.now()
+  };
+  current[statName] = Math.max(0, Number(current[statName] || 0) + Number(amount || 1));
+  current.updatedAt = Date.now();
+  await kvPut(env, key, current, { expirationTtl: 60 * 60 * 24 * 45 });
+  return current[statName];
+}
+
+async function getDailyStats(env, chatId, days = 7) {
+  const out = [];
+  const now = Date.now();
+  for (let i = 0; i < days; i++) {
+    const day = getStatsDayKey(now - i * 86400000);
+    const data = await kvGet(env, `chat_stats_daily:${chatId}:${day}`, null);
+    out.push(data || { date: day, messages: 0, warnings: 0, mutes: 0, bans: 0, deletedMessages: 0, linkViolations: 0, spamViolations: 0, commands: 0 });
+  }
+  return out.reverse();
+}
+
+function buildOwnerStatsReportText(stats, daily, chat) {
+  const title = escapeHTML(chat?.title || "گروه");
+  const total = Number(stats.messages || 0);
+  const recent = daily.reduce((sum, x) => sum + Number(x.messages || 0), 0);
+  const recentWarnings = daily.reduce((sum, x) => sum + Number(x.warnings || 0), 0);
+  const recentBans = daily.reduce((sum, x) => sum + Number(x.bans || 0), 0);
+  const recentDeleted = daily.reduce((sum, x) => sum + Number(x.deletedMessages || 0), 0);
+  const last = daily[daily.length - 1] || {};
+  return [
+    "📈 <b>گزارش مدیریتی گروه</b>",
+    "",
+    `🏠 گروه: <b>${title}</b>`,
+    `🆔 <code>${Number(chat?.id || 0)}</code>`,
+    "",
+    "📊 <b>آمار کلی</b>",
+    `💬 پیام‌ها: <b>${total.toLocaleString("fa-IR")}</b>`,
+    `👥 کاربران ثبت‌شده: <b>${Number(stats.users || 0).toLocaleString("fa-IR")}</b>`,
+    `⚠️ اخطارها: <b>${Number(stats.warnings || 0).toLocaleString("fa-IR")}</b>`,
+    `🔇 میوت‌ها: <b>${Number(stats.mutes || 0).toLocaleString("fa-IR")}</b>`,
+    `🚫 بن‌ها: <b>${Number(stats.bans || 0).toLocaleString("fa-IR")}</b>`,
+    `🗑️ حذف پیام: <b>${Number(stats.deletedMessages || 0).toLocaleString("fa-IR")}</b>`,
+    "",
+    "📅 <b>۷ روز اخیر</b>",
+    `💬 پیام: <b>${recent.toLocaleString("fa-IR")}</b>`,
+    `⚠️ اخطار: <b>${recentWarnings.toLocaleString("fa-IR")}</b>`,
+    `🚫 بن: <b>${recentBans.toLocaleString("fa-IR")}</b>`,
+    `🗑️ حذف: <b>${recentDeleted.toLocaleString("fa-IR")}</b>`,
+    "",
+    `📌 امروز: <b>${Number(last.messages || 0).toLocaleString("fa-IR")}</b> پیام | <b>${Number(last.warnings || 0).toLocaleString("fa-IR")}</b> اخطار`,
+    `🔄 آخرین بروزرسانی: <b>${new Date(Number(stats.updatedAt || Date.now())).toLocaleString("fa-IR")}</b>`
+  ].join("\n");
+}
+
+async function showOwnerStatsReport(env, callback, chatId) {
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await answerCallback(env, callback?.id, "⛔ فقط مالک ربات دسترسی دارد.", true);
+    return true;
+  }
+  const group = await kvGet(env, `managed_group:${chatId}`, null);
+  if (!group) {
+    await answerCallback(env, callback?.id, "⚠️ گروه ثبت نشده است.", true);
+    return true;
+  }
+  const stats = await getChatStats(env, chatId);
+  const daily = await getDailyStats(env, chatId, 7);
+  let chat = { id: Number(chatId), title: group.title };
+  try {
+    const result = await telegram("getChat", env, { chat_id: Number(chatId) });
+    chat = result?.result || chat;
+  } catch {}
+  await telegram("editMessageText", env, {
+    chat_id: actor,
+    message_id: callback.message.message_id,
+    text: buildOwnerStatsReportText(stats, daily, chat),
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: [
+      [inlineButton("🔄 بروزرسانی", `ownerstats:report:${chatId}`)],
+      [inlineButton("📊 آمار کامل", `ownerstats:full:${chatId}`)],
+      [inlineButton("⬅️ گروه", `ownerpanel:group:${chatId}`)]
+    ]}
+  });
+  await answerCallback(env, callback.id, "📈 گزارش بروزرسانی شد.");
+  return true;
+}
+
+
+/* =========================
+   OWNER EVENT LOGS
+========================= */
+
+function ownerLogEventKey(chatId, eventId) {
+  return `ownerlog:${chatId}:${eventId}`;
+}
+
+async function writeOwnerEventLog(env, {
+  chatId,
+  actorId = 0,
+  actorName = "",
+  targetId = 0,
+  targetName = "",
+  type = "general",
+  action = "",
+  details = ""
+}) {
+  const id = Number(chatId || 0);
+  if (!id) return false;
+  const eventId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const event = {
+    eventId, chatId: id, actorId: Number(actorId || 0),
+    actorName: String(actorName || ""), targetId: Number(targetId || 0),
+    targetName: String(targetName || ""), type: String(type || "general"),
+    action: String(action || ""), details: String(details || ""),
+    createdAt: Date.now()
+  };
+  await kvPut(env, ownerLogEventKey(id, eventId), event, { expirationTtl: 2592000 });
+  await kvPut(env, `ownerlog_latest:${id}`, event, { expirationTtl: 2592000 });
+  return true;
+}
+
+async function getOwnerEventLogs(env, chatId, limit = 30) {
+  const page = await kvList(env, `ownerlog:${Number(chatId)}:`, 1000);
+  const events = [];
+  for (const item of page?.keys || []) {
+    const event = await kvGet(env, item.name, null);
+    if (event?.createdAt) events.push(event);
+  }
+  events.sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+  return events.slice(0, Math.max(1, Math.min(Number(limit || 30), 100)));
+}
+
+function formatOwnerLogEvent(event) {
+  const time = new Date(Number(event.createdAt || Date.now())).toLocaleString("fa-IR", {
+    timeZone: "Asia/Tehran", hour: "2-digit", minute: "2-digit",
+    month: "2-digit", day: "2-digit"
+  });
+  const actor = escapeHTML(event.actorName || (event.actorId ? String(event.actorId) : "سیستم"));
+  const target = event.targetName ? ` → ${escapeHTML(event.targetName)}` : "";
+  const details = event.details ? `\n   ${escapeHTML(event.details).slice(0, 220)}` : "";
+  return `${time} | ${escapeHTML(event.type || "رویداد")} | ${escapeHTML(event.action || "اقدام")}\n   👤 ${actor}${target}${details}`;
+}
+
+async function showOwnerEventLogs(env, callback, chatId, filter = "all") {
+  const events = await getOwnerEventLogs(env, chatId, 50);
+  const filtered = filter === "security"
+    ? events.filter(e => ["security", "badword", "spam", "link"].includes(e.type))
+    : filter === "admin"
+      ? events.filter(e => ["admin", "moderation"].includes(e.type))
+      : events;
+  const group = await kvGet(env, `managed_group:${chatId}`, null) || {};
+  const title = escapeHTML(group.title || "گروه");
+  const body = filtered.length
+    ? filtered.slice(0, 20).map((e, i) => `${i + 1}. ${formatOwnerLogEvent(e)}`).join("\n\n")
+    : "هنوز رویدادی برای این گروه ثبت نشده است.";
+  const text = `📋 <b>گزارش رویدادها</b>\n\n🏢 ${title}\n🆔 <code>${chatId}</code>\n\n${body}`;
+  await telegram("editMessageText", env, {
+    chat_id: callback.from.id,
+    message_id: callback.message.message_id,
+    text, parse_mode: "HTML",
+    reply_markup: { inline_keyboard: [
+      [inlineButton("📋 همه", `ownerlog:all:${chatId}`), inlineButton("🛡️ امنیتی", `ownerlog:security:${chatId}`)],
+      [inlineButton("👮 مدیریتی", `ownerlog:admin:${chatId}`), inlineButton("🔄 بروزرسانی", `ownerlog:${filter}:${chatId}`)],
+      [inlineButton("⬅️ گروه", `ownerpanel:group:${chatId}`), inlineButton("🏠 پنل اصلی", "ownerpanel:main")]
+    ]}
+  });
+  await answerCallback(env, callback.id, "📋 گزارش بروزرسانی شد.");
+  return true;
+}
+
+async function handleOwnerEventLogCallback(callback, env) {
+  const data = String(callback?.data || "");
+  if (!data.startsWith("ownerlog:")) return false;
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await answerCallback(env, callback?.id, "⛔ فقط مالک ربات دسترسی دارد.", true);
+    return true;
+  }
+  const parts = data.split(":");
+  const filter = parts[1] || "all";
+  const chatId = Number(parts[2] || 0);
+  if (!chatId) return true;
+  return await showOwnerEventLogs(env, callback, chatId, filter);
+}
+
+async function logMeaningfulOwnerCallback(callback, env) {
+  const data = String(callback?.data || "");
+  let chatId = 0;
+  if (data.startsWith("ownersec:")) {
+    chatId = Number(data.split(":")[2] || 0);
+  } else if (data.startsWith("admgr:")) {
+    chatId = Number(data.split(":")[2] || 0);
+  } else {
+    return;
+  }
+  if (!chatId) return;
+  const actor = callback?.from || {};
+  let type = "admin";
+  let action = "اقدام مدیریتی";
+  if (data.startsWith("ownersec:")) {
+    type = "security";
+    action = "تغییر تنظیمات امنیتی";
+  } else if (data.startsWith("admgr:add:")) {
+    type = "admin";
+    action = "افزودن مدیر";
+  } else if (data.startsWith("admgr:t:")) {
+    type = "admin";
+    action = "تغییر سطح دسترسی مدیر";
+  }
+  await writeOwnerEventLog(env, {
+    chatId,
+    actorId: actor.id,
+    actorName: actor.first_name || actor.username || "",
+    targetId: data.startsWith("admgr:") ? Number(data.split(":")[3] || 0) : 0,
+    type,
+    action,
+    details: `شناسه رویداد: ${data.slice(0, 180)}`
+  });
+}
+
+async function handleOwnerStatsCallback(callback, env) {
+  const data = String(callback?.data || "");
+  if (!data.startsWith("ownerstats:")) return false;
+  const actor = Number(callback?.from?.id || 0);
+  if (!isOwner(actor)) {
+    await answerCallback(env, callback?.id, "⛔ فقط مالک ربات دسترسی دارد.", true);
+    return true;
+  }
+  const parts = data.split(":");
+  const action = parts[1];
+  const chatId = Number(parts[2] || 0);
+  if (!chatId) return true;
+  if (action === "report") return await showOwnerStatsReport(env, callback, chatId);
+  if (action === "full") {
+    const stats = await getChatStats(env, chatId);
+    const daily = await getDailyStats(env, chatId, 7);
+    const group = await kvGet(env, `managed_group:${chatId}`, null) || {};
+    let chat = { id: chatId, title: group.title || "گروه" };
+    try { const result = await telegram("getChat", env, { chat_id: chatId }); chat = result?.result || chat; } catch {}
+    await telegram("editMessageText", env, {
+      chat_id: actor,
+      message_id: callback.message.message_id,
+      text: buildChatStatsText(stats, chat) + "\n\n📅 <b>روند ۷ روز اخیر</b>\n" + daily.map(x => `${x.date}: ${Number(x.messages||0)} پیام | ${Number(x.warnings||0)} اخطار | ${Number(x.bans||0)} بن`).join("\n"),
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[inlineButton("📈 گزارش مدیریتی", `ownerstats:report:${chatId}`)], [inlineButton("⬅️ گروه", `ownerpanel:group:${chatId}`)]] }
+    });
+    await answerCallback(env, callback.id, "📊 آمار کامل بروزرسانی شد.");
+    return true;
+  }
+  return true;
+}
 
 /* =========================
    RESET STATS
@@ -31198,6 +33653,24 @@ async function routeCallbackQuery(
   const data = String(callback.data || "");
 
   try {
+    await logMeaningfulOwnerCallback(callback, env);
+
+    if (data.startsWith("ownersec:") && typeof handleOwnerSecurityCallback === "function") {
+      if (await runBotHandler("Owner Security Callback", handleOwnerSecurityCallback, callback, env)) return true;
+    }
+
+    if (data.startsWith("ownerpanel:") && typeof handleOwnerPanelCallback === "function") {
+      if (await runBotHandler("Owner Panel Callback", handleOwnerPanelCallback, callback, env)) return true;
+    }
+
+    if ((data.startsWith("admgr:") || data.startsWith("ownerreq:")) && typeof handleOwnerAdminCallback === "function") {
+      if (await runBotHandler("Owner Admin Callback", handleOwnerAdminCallback, callback, env)) return true;
+    }
+
+    if (data.startsWith("badword:") && typeof handleBadWordCallback === "function") {
+      if (await runBotHandler("Bad Word Callback", handleBadWordCallback, callback, env)) return true;
+    }
+
     // 1) Poll callbacks must be handled before admin-only fallbacks.
     if (/^poll(?:vote|results|close):/.test(data) && typeof handlePollCallback === "function") {
       if (await runBotHandler("Poll Callback", handlePollCallback, callback, env)) return true;
@@ -31232,7 +33705,16 @@ async function routeCallbackQuery(
       if (await runBotHandler("Security Callback", handleSecurityCallback, callback, env)) return true;
     }
 
-    // 6) Stats callbacks.
+    // 6) Owner-only statistics/report callbacks.
+    if (data.startsWith("ownerlog:") && typeof handleOwnerEventLogCallback === "function") {
+      if (await runBotHandler("Owner Event Log Callback", handleOwnerEventLogCallback, callback, env)) return true;
+    }
+
+    if (data.startsWith("ownerstats:") && typeof handleOwnerStatsCallback === "function") {
+      if (await runBotHandler("Owner Stats Callback", handleOwnerStatsCallback, callback, env)) return true;
+    }
+
+    // 7) Stats callbacks.
     if (data.startsWith("stats:") && typeof handleStatsCallback === "function") {
       if (await runBotHandler("Stats Callback", handleStatsCallback, callback, env)) return true;
     }
@@ -31240,6 +33722,9 @@ async function routeCallbackQuery(
     // 7) Welcome/log/warning callback families.
     if (data.startsWith("welcome:") && typeof handleWelcomeCallback === "function") {
       if (await runBotHandler("Welcome Callback", handleWelcomeCallback, callback, env)) return true;
+    }
+    if (data.startsWith("umview:") && typeof handleUserPermissionsCallback === "function") {
+      if (await runBotHandler("User Permissions View", handleUserPermissionsCallback, callback, env)) return true;
     }
     if ((data.startsWith("panel:logs") || data.startsWith("logs:") || data.startsWith("um:")) && typeof handleLogCallback === "function") {
       if (await runBotHandler("Log Callback", handleLogCallback, callback, env)) return true;
@@ -31318,6 +33803,17 @@ async function routeMessage(
   ) {
     if (
       await runBotHandler(
+        "Owner Welcome Text Input",
+        handleOwnerWelcomeTextInput,
+        message,
+        env
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      await runBotHandler(
         "Private Command Router",
         routeBotCommand,
         message,
@@ -31363,6 +33859,12 @@ async function routeMessage(
     chatType ===
       "supergroup"
   ) {
+
+    try {
+      await registerOwnerManagedGroup(env, message.chat);
+    } catch (error) {
+      console.error("Managed group registry:", getSafeErrorMessage(error));
+    }
 
     /*
      * Keep group and per-user statistics updated.
@@ -31433,6 +33935,14 @@ async function routeMessage(
       );
     }
 
+    if (await runBotHandler("Bad Words Command", handleBadWordsCommand, message, env)) {
+      return true;
+    }
+
+    if (await runBotHandler("Owner Panel Command", handleOwnerPanelCommand, message, env)) {
+      return true;
+    }
+
     /*
      * Admin panel commands.
      */
@@ -31474,6 +33984,10 @@ async function routeMessage(
       return true;
     }
 
+
+    if (await runBotHandler("Quarantine Command", handleQuarantineCommand, message, env)) {
+      return true;
+    }
 
     /*
      * Unified command router.
@@ -31543,6 +34057,10 @@ async function routeMessage(
       return true;
     }
 
+    if (await runBotHandler("Quarantine Enforcement", enforceQuarantine, message, env)) {
+      return true;
+    }
+
     if (
       await runBotHandler(
         "User Management",
@@ -31554,6 +34072,10 @@ async function routeMessage(
       return true;
     }
 
+
+    if (await runBotHandler("Bad Word Protection", processBadWords, message, env)) {
+      return true;
+    }
 
     /*
      * Anti-spam.
