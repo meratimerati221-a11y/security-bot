@@ -317,84 +317,101 @@ function isOwner(userId) {
 ========================= */
 
 function getKV(env) {
-  if (!env.SECURITY_KV) {
-    throw new Error(
-      "SECURITY_KV binding is missing"
-    );
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("Supabase configuration is missing");
   }
 
-  return env.SECURITY_KV;
+  const base = String(env.SUPABASE_URL).replace(/\/+$/, "");
+  const endpoint = `${base}/rest/v1/kv_store`;
+  const headers = {
+    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    "Content-Type": "application/json",
+    Prefer: "return=representation"
+  };
+
+  return {
+    async get(key) {
+      const url = `${endpoint}?key=eq.${encodeURIComponent(key)}&select=key,value,expires_at&limit=1`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) throw new Error(`Supabase GET failed (${res.status})`);
+      const rows = await res.json();
+      const row = rows?.[0];
+      if (!row) return null;
+      if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
+        await this.delete(key);
+        return null;
+      }
+      return typeof row.value === "string" ? row.value : JSON.stringify(row.value);
+    },
+
+    async put(key, value, options = undefined) {
+      let expiresAt = null;
+      if (options?.expirationTtl) {
+        expiresAt = new Date(Date.now() + Number(options.expirationTtl) * 1000).toISOString();
+      } else if (options?.expiration) {
+        expiresAt = new Date(Number(options.expiration) * 1000).toISOString();
+      }
+
+      let parsedValue = value;
+      if (typeof value === "string") {
+        try { parsedValue = JSON.parse(value); } catch { parsedValue = value; }
+      }
+
+      const res = await fetch(`${endpoint}?on_conflict=key`, {
+        method: "POST",
+        headers: { ...headers, Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ key, value: parsedValue, expires_at: expiresAt, updated_at: new Date().toISOString() })
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(`Supabase PUT failed (${res.status}) ${detail}`);
+      }
+    },
+
+    async delete(key) {
+      const res = await fetch(`${endpoint}?key=eq.${encodeURIComponent(key)}`, {
+        method: "DELETE",
+        headers
+      });
+      if (!res.ok) throw new Error(`Supabase DELETE failed (${res.status})`);
+    },
+
+    async list({ prefix = "", limit = 1000 } = {}) {
+      const url = `${endpoint}?key=like.${encodeURIComponent(prefix)}%25&select=key&limit=${Math.min(Number(limit) || 1000, 1000)}`;
+      const res = await fetch(url, { headers });
+      if (!res.ok) throw new Error(`Supabase LIST failed (${res.status})`);
+      const rows = await res.json();
+      return {
+        keys: (rows || []).map(row => ({ name: row.key })),
+        list_complete: true,
+        cursor: undefined
+      };
+    }
+  };
 }
 
-
-async function kvGet(
-  env,
-  key,
-  fallback = null
-) {
-  const kv =
-    getKV(env);
-
-  const value =
-    await kv.get(key);
-
-  if (
-    value === null
-  ) {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(
-      value
-    );
-  } catch {
-    return value;
-  }
+async function kvGet(env, key, fallback = null) {
+  const kv = getKV(env);
+  const value = await kv.get(key);
+  if (value === null) return fallback;
+  try { return JSON.parse(value); } catch { return value; }
 }
 
-
-async function kvPut(
-  env,
-  key,
-  value,
-  options
-) {
-  const kv =
-    getKV(env);
-
-  await kv.put(
-    key,
-
-    typeof value ===
-    "string"
-      ? value
-      : JSON.stringify(
-          value
-        ),
-
-    options
-  );
+async function kvPut(env, key, value, options) {
+  const kv = getKV(env);
+  await kv.put(key, typeof value === "string" ? value : JSON.stringify(value), options);
 }
 
-
-async function kvDelete(
-  env,
-  key
-) {
-  const kv =
-    getKV(env);
-
-  await kv.delete(
-    key
-  );
+async function kvDelete(env, key) {
+  const kv = getKV(env);
+  await kv.delete(key);
 }
 
 async function kvList(env, prefix, limit = 1000) {
   const kv = getKV(env);
   return await kv.list({ prefix, limit });
 }
-
 
 /* =========================
    SETTINGS
@@ -13342,11 +13359,11 @@ async function handleOwnerPanelCallback(callback, env) {
 
   if (data === "ownerpanel:status") {
     const tokenState = env?.BOT_TOKEN ? "🟢 متصل" : "🔴 تنظیم نشده";
-    const kvState = env?.SECURITY_KV ? "🟢 متصل" : "🔴 تنظیم نشده";
+    const kvState = (env?.SUPABASE_URL && env?.SUPABASE_SERVICE_ROLE_KEY) ? "🟢 متصل" : "🔴 تنظیم نشده";
     await telegram("editMessageText", env, {
       chat_id: actor,
       message_id: callback.message.message_id,
-      text: `📊 <b>وضعیت ربات</b>\n\n🤖 Bot Token: ${tokenState}\n🗄️ SECURITY_KV: ${kvState}\n👑 تعداد مالکان ثبت‌شده: <b>${OWNER_IDS.length}</b>`,
+      text: `📊 <b>وضعیت ربات</b>\n\n🤖 Bot Token: ${tokenState}\n🗄️ Supabase: ${kvState}\n👑 تعداد مالکان ثبت‌شده: <b>${OWNER_IDS.length}</b>`,
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: [[inlineButton("🔄 بروزرسانی", "ownerpanel:status")],[inlineButton("⬅️ برگشت", "ownerpanel:main")]] }
     });
